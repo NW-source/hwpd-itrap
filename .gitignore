@@ -1,20 +1,20 @@
-# ข้อมูลดิบ — ห้าม push ขึ้น GitHub
-*.csv
-*.parquet
+# Database files (ข้อมูลดิบ — ไม่ขึ้น GitHub เด็ดขาด)
 *.db
 *.sqlite
+*.parquet
 
-# Python
-__pycache__/
-*.py[cod]
-*.egg-info/
-.env
-.venv/
-venv/
-
-# Streamlit
+# Streamlit secrets (credentials — ห้ามขึ้น)
 .streamlit/secrets.toml
 
-# OS
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Local data files
+upload_queue/
+*.csv
+
+# OS files
 .DS_Store
 Thumbs.db
