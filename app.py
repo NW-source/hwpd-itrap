@@ -2369,12 +2369,18 @@ if mode == "⚙️ แอดมิน (Admin Portal)":
 
     st.sidebar.markdown("---")
     
-    tab_upload, tab_whitelist, tab_accuracy = st.tabs([
+    _admin_tabs = [
         "🗂️ นำเข้าข้อมูล (Data Pipeline)",
         "📜 บัญชีรถยกเว้น (White-list)",
         "📊 AI Accuracy Dashboard",
-    ])
-    
+    ]
+    if has_role('super_admin'):
+        _admin_tabs.append("👥 จัดการผู้ใช้ (User Management)")
+
+    tab_upload, tab_whitelist, tab_accuracy, *_extra_tabs = st.tabs(_admin_tabs)
+    tab_users = _extra_tabs[0] if _extra_tabs else None
+
+
     with tab_upload:
         st.header("🗂️ การจัดการฐานข้อมูล (Data Pipeline)")
         uploaded_files = st.file_uploader("นำเข้าแฟ้มประวัติจุดตรวจ LPR (CSV/Excel)", accept_multiple_files=True)
@@ -2563,6 +2569,99 @@ if mode == "⚙️ แอดมิน (Admin Portal)":
             })
             st.dataframe(_log_disp, use_container_width=True, hide_index=True)
             excel_download_button(_log_disp, "ai_feedback_log.xlsx", "📥 Export Feedback Log (Excel)")
+
+    # ── TAB: จัดการผู้ใช้ (Super Admin only) ──────────────────────────────────
+    if tab_users and has_role('super_admin'):
+        with tab_users:
+            st.header("👥 จัดการผู้ใช้ระบบ (User Management)")
+            from auth import get_all_users, update_user_password, deactivate_user, create_user
+
+            all_users = get_all_users()
+
+            # ── รายชื่อผู้ใช้ทั้งหมด ────────────────────────────────────────
+            st.markdown("### 📋 รายชื่อผู้ใช้ทั้งหมด")
+            if all_users:
+                user_table = []
+                for u in all_users:
+                    role_icon = {"super_admin": "👑 Super Admin", "admin": "🔧 Admin", "viewer": "👁️ Viewer"}.get(u.get('role', ''), u.get('role', ''))
+                    user_table.append({
+                        "สถานะ":     "✅ Active" if u.get('is_active') else "❌ Inactive",
+                        "ชื่อแสดง":   u.get('display_name', ''),
+                        "Username":   u.get('username', ''),
+                        "Role":       role_icon,
+                        "เข้าใช้ล่าสุด": str(u.get('last_login', '—'))[:16].replace('T', ' '),
+                        "สร้างเมื่อ":   str(u.get('created_at', '—'))[:10],
+                    })
+                st.dataframe(pd.DataFrame(user_table), use_container_width=True, hide_index=True)
+            else:
+                st.info("ไม่พบข้อมูลผู้ใช้")
+
+            st.markdown("---")
+
+            col_pw, col_role = st.columns(2)
+
+            # ── เปลี่ยนรหัสผ่าน ──────────────────────────────────────────────
+            with col_pw:
+                st.markdown("### 🔑 เปลี่ยนรหัสผ่าน")
+                user_list = [u['username'] for u in all_users] if all_users else []
+                chg_user = st.selectbox("เลือก User:", user_list, key="local_chg_user")
+                new_pw1  = st.text_input("รหัสผ่านใหม่:", type="password", key="local_pw1")
+                new_pw2  = st.text_input("ยืนยันรหัสผ่าน:", type="password", key="local_pw2")
+                if st.button("💾 บันทึกรหัสผ่านใหม่", use_container_width=True, key="local_btn_pw"):
+                    if not new_pw1:
+                        st.error("กรุณากรอกรหัสผ่านใหม่")
+                    elif new_pw1 != new_pw2:
+                        st.error("❌ รหัสผ่านทั้งสองไม่ตรงกัน")
+                    elif len(new_pw1) < 6:
+                        st.error("❌ รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร")
+                    else:
+                        ok = update_user_password(chg_user, new_pw1)
+                        if ok:
+                            st.success(f"✅ เปลี่ยนรหัสผ่านของ **{chg_user}** สำเร็จ!")
+                        else:
+                            st.error("❌ เปลี่ยนรหัสผ่านไม่สำเร็จ — ตรวจสอบการเชื่อมต่อ Supabase")
+
+            # ── เปลี่ยน Role / ปิด User ──────────────────────────────────────
+            with col_role:
+                st.markdown("### ⚙️ จัดการ Role / สถานะ")
+                safe_users = [u['username'] for u in all_users if u['username'] != 'supuseradmin'] if all_users else []
+                mgmt_user = st.selectbox("เลือก User:", safe_users, key="local_mgmt_user")
+                new_role  = st.selectbox("Role ใหม่:", ["viewer", "admin", "super_admin"], key="local_mgmt_role")
+                col_r1, col_r2 = st.columns(2)
+                with col_r1:
+                    if st.button("🔄 เปลี่ยน Role", use_container_width=True, key="local_btn_role"):
+                        try:
+                            from supabase_sync import get_supabase_client
+                            get_supabase_client().table('users').update({'role': new_role}).eq('username', mgmt_user).execute()
+                            st.success(f"✅ เปลี่ยน role ของ {mgmt_user} เป็น {new_role}")
+                        except Exception as e:
+                            st.error(f"❌ {e}")
+                with col_r2:
+                    if st.button("🚫 ปิด User", use_container_width=True, key="local_btn_deact"):
+                        ok = deactivate_user(mgmt_user)
+                        if ok:
+                            st.success(f"✅ ปิด account {mgmt_user} แล้ว")
+                        else:
+                            st.error("❌ ไม่สำเร็จ")
+
+            st.markdown("---")
+
+            # ── สร้าง User ใหม่ ────────────────────────────────────────────────
+            st.markdown("### ➕ สร้างผู้ใช้ใหม่")
+            c1, c2, c3, c4 = st.columns(4)
+            with c1: n_uname = st.text_input("Username:", key="local_n_uname")
+            with c2: n_dname = st.text_input("ชื่อแสดง:", key="local_n_dname")
+            with c3: n_role  = st.selectbox("Role:", ["viewer", "admin", "super_admin"], key="local_n_role")
+            with c4: n_pw    = st.text_input("รหัสผ่าน:", type="password", key="local_n_pw")
+            if st.button("✅ สร้าง User ใหม่", use_container_width=True, key="local_btn_create"):
+                if n_uname and n_pw and n_dname:
+                    ok = create_user(n_uname.strip().lower(), n_pw, n_role, n_dname)
+                    if ok:
+                        st.success(f"✅ สร้าง User **{n_uname}** ({n_role}) สำเร็จ! — ให้รีเฟรชหน้านี้เพื่อเห็นรายชื่อใหม่")
+                    else:
+                        st.error("❌ สร้างไม่สำเร็จ — อาจมี Username นี้อยู่แล้ว")
+                else:
+                    st.error("กรุณากรอกข้อมูลให้ครบทุกช่อง")
 
 elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboard)":
     
