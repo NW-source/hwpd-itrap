@@ -2730,11 +2730,15 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
                         reports_full_df = pd.DataFrame(all_res.data)
                         
                     # 2. Pull target date priority
-                    res = supabase.table('cloud_daily_reports').select('priority_json, metrics_json').eq('report_date', selected_date).execute()
+                    res = supabase.table('cloud_daily_reports').select('priority_data, dashboard_metrics').eq('report_date', selected_date).execute()
                     if res.data and len(res.data) > 0:
                         import json
-                        parsed_json = json.loads(res.data[0]['priority_json'])
-                        priority_df = pd.DataFrame(parsed_json)
+                        
+                        p_data = res.data[0]['priority_data']
+                        # if it's already a list (from supabase jsonb), use it directly
+                        if isinstance(p_data, str):
+                            p_data = json.loads(p_data)
+                        priority_df = pd.DataFrame(p_data)
                         
                         import ast
                         # convert strings back to list/dict for UI render
@@ -2745,7 +2749,10 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
                         if 'dates_list' in priority_df.columns:
                             priority_df['dates_list'] = priority_df['dates_list'].apply(lambda x: ast.literal_eval(x) if isinstance(x, str) else x)
                             
-                        metrics = json.loads(res.data[0]['metrics_json']) if res.data[0]['metrics_json'] else {}
+                        m_data = res.data[0]['dashboard_metrics']
+                        if isinstance(m_data, str):
+                            m_data = json.loads(m_data) if m_data else {}
+                        metrics = m_data if m_data else {}
                 except Exception as e:
                     st.error(f"⚠️ Error loading report: {e}")
                 
