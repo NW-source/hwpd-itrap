@@ -470,8 +470,9 @@ def render_realtime_tab(selected_date: str, rt_active_db: pd.DataFrame, rt_prior
 
     # ── 3 sub-tabs: convoy filter Cars_List ≥ 2 ──────────────────────────────
     def _cars_len(cars):
+        import ast
         if isinstance(cars, list): return len(cars)
-        try: return len(eval(str(cars)))
+        try: return len(ast.literal_eval(str(cars)))
         except: return 0
 
     _nc = 0; _nv = 0; _real_convoy = pd.DataFrame(); _susp_c = pd.DataFrame()
@@ -942,7 +943,7 @@ def process_raw_data_polars(df_pd):
     _invalid = _s.str.contains(_drop_pat, case=False, na=True) | (_s.str.len() == 0) | (_s == '-')
     _s = _s.where(~_invalid, other=None)
     df_pd['ทะเบียนรถ'] = _s
-    df_pd['จังหวัด'] = df_pd['จังหวัด'].astype(str).str.strip().str.replace('None', '')
+    df_pd['จังหวัด'] = df_pd['จังหวัด'].fillna('').astype(str).str.strip().str.replace('None', '').str.replace('nan', '')
     df_pd = df_pd.dropna(subset=['ทะเบียนรถ'])
     df_pd['ทะเบียน_Full'] = df_pd['ทะเบียนรถ'] + df_pd['จังหวัด']
     
