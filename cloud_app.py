@@ -60,8 +60,14 @@ def show_priority_table(df: pd.DataFrame, table_key: str = "tbl"):
         st.info("ไม่พบรายการเป้าหมาย")
         return
 
-    max_n  = min(200, len(df))
-    show_n = st.slider("แสดง (คัน):", 10, max_n, min(50, max_n), key=f"slider_{table_key}")
+    max_n  = len(df)
+
+    # แสดง slider เฉพาะเมื่อมีมากกว่า 20 คัน
+    if max_n > 20:
+        show_n = st.slider("แสดง (คัน):", 10, max_n, min(50, max_n), key=f"slider_{table_key}")
+    else:
+        show_n = max_n
+
     df_show = df.head(show_n)
 
     for _, row in df_show.iterrows():
