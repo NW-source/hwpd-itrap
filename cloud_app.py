@@ -2771,6 +2771,81 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
             active_db_all = pd.DataFrame()
             active_db = pd.DataFrame()
 
+
+        def _compute_fallback_metrics(p_df, a_df):
+            import pandas as pd
+            import numpy as np
+            m = {}
+            if p_df.empty or a_df.empty: return m
+            apex_df = p_df[p_df['ประเภท'] == "กลุ่มเป้าหมายความมั่นคงระดับสูงสุด"]
+            m['cat_apex'] = len(apex_df)
+            m['cat_cloned'] = len(p_df[p_df['ประเภท'] == "กลุ่มเป้าหมายสวมทะเบียน"])
+            m['cat_convoy_car'] = len(p_df[p_df['ประเภท'] == "กลุ่มรถยนต์เคลื่อนที่แบบขบวน"])
+            m['cat_others'] = len(p_df[p_df['ประเภท'] == "กลุ่มรถต้องสงสัย"])
+            
+            targeted_cars = set()
+            for cars in p_df['Cars_List']: targeted_cars.update(cars)
+            target_logs = a_df[a_df['ทะเบียน_Full'].isin(targeted_cars)].copy()
+            
+            if not target_logs.empty:
+                risk_map = {}
+                for _, row in p_df.iterrows():
+                    for car in row['Cars_List']:
+                        risk_map[car] = max(risk_map.get(car, 0), row['Risk Score'])
+                target_logs['Risk_Score'] = target_logs['ทะเบียน_Full'].map(risk_map)
+                
+                cam_stats = target_logs.groupby('จุดติดตั้งกล้อง').agg(
+                    lat=('ละติจูด', 'first'), lon=('ลองจิจูด', 'first'),
+                    volume=('ทะเบียน_Full', 'nunique'), 
+                    avg_score=('Risk_Score', 'mean'), max_score=('Risk_Score', 'max')
+                ).reset_index()
+                
+                plate_to_type = {}
+                for _, row in p_df.iterrows():
+                    for car in row['Cars_List']:
+                        plate_to_type[car] = row['ประเภท']
+                
+                def get_threat(t):
+                    if t == 'กลุ่มเป้าหมายความมั่นคงระดับสูงสุด': return 'Apex Threat'
+                    if t == 'กลุ่มเป้าหมายสวมทะเบียน': return 'Clone'
+                    if t == 'กลุ่มรถยนต์เคลื่อนที่แบบขบวน': return 'Convoy'
+                    return 'Suspect'
+                cam_stats['threat_type'] = target_logs.groupby('จุดติดตั้งกล้อง')['ทะเบียน_Full'].apply(lambda x: get_threat(plate_to_type.get(x.iloc[0], 'Suspect')))
+                
+                m['map_stats'] = cam_stats.to_dict('records')
+                
+                target_logs['Hour'] = pd.to_datetime(target_logs['Datetime']).dt.hour
+                hourly = target_logs.groupby('Hour').size().reset_index(name='count')
+                h_dict = dict(zip(hourly['Hour'], hourly['count']))
+                h_vals = [h_dict.get(i, 0) for i in range(24)]
+                m['clock'] = {
+                    'labels': [f"{i:02d}:00" for i in range(24)],
+                    'values': h_vals,
+                    'peak_hour': int(hourly.loc[hourly['count'].idxmax()]['Hour']) if not hourly.empty else 0
+                }
+                
+                tactical = target_logs.groupby('ประเภทรถ').size().reset_index(name='count')
+                t_dict = dict(zip(tactical['ประเภทรถ'], tactical['count']))
+                m['tactical'] = {
+                    'types': list(t_dict.keys()),
+                    'counts': list(t_dict.values())
+                }
+                
+                tactical_table = target_logs.groupby(['จุดติดตั้งกล้อง', 'ทะเบียน_Full']).agg(
+                    First_Seen=('Datetime', 'min'),
+                    Last_Seen=('Datetime', 'max'),
+                    Detections=('Datetime', 'count'),
+                    Risk_Score=('Risk_Score', 'first')
+                ).reset_index()
+                tactical_table['Threat_Type'] = tactical_table['ทะเบียน_Full'].map(lambda x: plate_to_type.get(x, 'Unknown'))
+                tactical_table.sort_values('Risk_Score', ascending=False, inplace=True)
+                m['tactical_table'] = tactical_table.to_dict('records')
+                
+            return m
+
+        if not metrics:
+            metrics = _compute_fallback_metrics(priority_df, active_db)
+
         filtered_df = priority_df[priority_df['Risk Score'].astype(str).str.replace('%', '').astype(float) >= 80].copy() if not priority_df.empty else pd.DataFrame()
 
         if not filtered_df.empty and metrics:
