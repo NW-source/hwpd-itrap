@@ -764,6 +764,22 @@ _light_css = """    /* ═══ LIGHT MODE ═══ */
     .card-watch .metric-value, .card-watch .metric-label {
         color: #1e293b !important; text-shadow: none !important;
     }
+
+    /* --- GLOBAL THAI FONT OVERRIDE --- */
+    :root {
+        --font: 'Sarabun', 'TH Sarabun PSK', sans-serif !important;
+        --font-sans-serif: 'Sarabun', 'TH Sarabun PSK', sans-serif !important;
+        --font-serif: 'Sarabun', 'TH Sarabun PSK', serif !important;
+    }
+    
+    .stApp, p, h1, h2, h3, h4, h5, h6, span:not([class*="icon"]):not([class*="material"]), div, li, label, button, input {
+        font-family: 'Sarabun', 'TH Sarabun PSK', sans-serif !important;
+    }
+    
+    /* Ensure Material Icons still work */
+    span[class*="material-symbols"], span[class*="icon"], i[class*="icon"], [data-testid="stIconMaterial"] {
+        font-family: 'Material Symbols Rounded', 'Material Icons', sans-serif !important;
+    }
 """
 
 _active_css = _dark_css if st.session_state.get('theme', 'dark') == 'dark' else _light_css
