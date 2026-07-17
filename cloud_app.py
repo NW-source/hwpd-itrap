@@ -90,6 +90,19 @@ def get_plate_display(row: dict) -> str:
         if v := row.get(col): return str(v)
     return '—'
 
+def _export_dossier_excel(target_info, cars: list) -> bytes:
+    """สร้าง Excel สำหรับ Export แฟ้มคดี"""
+    try:
+        buf = BytesIO()
+        row_dict = {k: v for k, v in target_info.items()
+                    if k not in ('Radar_Data', 'Cars_List')}
+        row_dict['ยานพาหนะในกลุ่ม'] = ' / '.join(str(c) for c in cars)
+        with pd.ExcelWriter(buf, engine='openpyxl') as writer:
+            pd.DataFrame([row_dict]).to_excel(writer, index=False, sheet_name='แฟ้มคดี')
+        return buf.getvalue()
+    except Exception:
+        return b""
+
 # ══ Case Dossier (Cloud Version — ใช้ข้อมูลจาก priority_df) ══════════════════
 def render_case_dossier_cloud(selected_target: str, priority_df: pd.DataFrame, tab_key: str = ""):
     """แสดงแฟ้มคดี จาก priority_df (ไม่ต้องใช้ active_db)"""
@@ -99,9 +112,10 @@ def render_case_dossier_cloud(selected_target: str, priority_df: pd.DataFrame, t
         return
 
     target_info = rows.iloc[0]
-    typ   = str(target_info.get('ประเภท', ''))
+    typ        = str(target_info.get('ประเภท', ''))
     is_clone   = "สวมทะเบียน" in typ
     is_convoy  = "ขบวน" in typ
+    is_anomaly = "ผิดปกติ" in typ
 
     # Cars list
     cars = target_info.get('Cars_List', [])
@@ -110,23 +124,46 @@ def render_case_dossier_cloud(selected_target: str, priority_df: pd.DataFrame, t
         except: cars = [cars]
     if not isinstance(cars, list): cars = [str(cars)]
 
-    st.markdown(f"## 📂 ข้อมูลเป้าหมายเฝ้าระวัง: {selected_target}")
-    st.markdown("<hr style='border:2px solid #94a3b8'>", unsafe_allow_html=True)
+    # ── Header (เหมือน local) ──
+    st.markdown("<div class='dossier-section print-hidden'><hr style='border:2px solid #94a3b8'></div>",
+                unsafe_allow_html=True)
+    col_header, col_btn = st.columns([8, 2])
+    with col_header:
+        st.markdown(f"## 📂 ข้อมูลเป้าหมายเฝ้าระวัง: {selected_target}")
+    with col_btn:
+        st.download_button(
+            "🖨️ Export แฟ้มคดี (Excel)",
+            data=_export_dossier_excel(target_info, cars),
+            file_name=f"dossier_{selected_target}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
+            key=f"dl_{selected_target}_{tab_key}"
+        )
 
-    # ── พฤติกรรม ──
+    # ── สถานะเป้าหมาย (Action Status) ──
+    st.markdown("#### 🎯 ระบุสถานะเป้าหมาย (Action Status)")
+    status_options = ["🔴 เฝ้าระวังใหม่", "🟡 สั่งการตรวจสอบแล้ว", "🟢 เคลียร์เป้าหมาย/จับกุมแล้ว"]
+    st.selectbox("ปรับปรุงสถานะ:", status_options, key=f"status_{selected_target}_{tab_key}",
+                 label_visibility="collapsed")
+    st.caption("⚠️ Cloud View: การปรับสถานะไม่บันทึกถาวร — กรุณาอัปเดตผ่านระบบหลักในเครื่อง")
+
+    # ── พฤติกรรม (เหมือน local) ──
     behav = str(target_info.get('พฤติกรรมต้องสงสัย', '—'))
-    if is_clone:
-        st.markdown(f"<div class='dossier-reason'><b>🚨 ภัยคุกคามระดับวิกฤต:</b><br>"
-                    f"<span style='font-size:16px'>{behav}</span></div>", unsafe_allow_html=True)
-    else:
-        score = target_info.get('Risk Score', '—')
-        st.markdown(f"<div class='dossier-reason' style='background:linear-gradient(135deg,#1e1b4b,#312e81);"
-                    f"border-color:#6366f1;color:#c7d2fe'>"
-                    f"<b>⚠️ ตรวจพบพฤติการณ์ต้องสงสัย:</b> {behav}<br>"
-                    f"<span style='font-size:14px;opacity:.8'>(ระดับภัยคุกคาม: {score})</span></div>",
-                    unsafe_allow_html=True)
+    score = target_info.get('Risk Score', '—')
 
-    # ── Radar Chart + Summary ──
+    if is_clone:
+        st.markdown(
+            f"<div class='dossier-reason'><b>🚨 ภัยคุกคามระดับวิกฤต: </b><br>"
+            f"<span style='font-size:16px'>{behav}</span></div>",
+            unsafe_allow_html=True)
+    else:
+        st.markdown(
+            f"<div class='dossier-reason' style='background-color:#f8fafc;border-color:#cbd5e1;color:#0f172a'>"
+            f"<b>⚠️ ตรวจพบพฤติการณ์ต้องสงสัย:</b> {behav} <br>"
+            f"<span style='font-size:14px;opacity:.8'>(ระดับภัยคุกคาม: {score})</span></div>",
+            unsafe_allow_html=True)
+
+    # ── Radar Chart + Intelligence Summary (เหมือน local) ──
     col_radar, col_summary = st.columns([4, 6])
 
     with col_radar:
@@ -138,72 +175,68 @@ def render_case_dossier_cloud(selected_target: str, priority_df: pd.DataFrame, t
             r_vals = [radar_raw.get('Night',0), radar_raw.get('Border',0),
                       radar_raw.get('Shuttle',0), radar_raw.get('Regional',0),
                       radar_raw.get('Convoy',0)]
-            theta_vals = ['ห้วงเวลาวิกาล\n(Max 20)', 'พื้นที่ชายแดน\n(Max 30)',
-                          'ความถี่ผ่านด่าน\n(Max 20)', 'ยานพาหนะต่างถิ่น\n(Max 10)',
-                          'เคลื่อนที่แบบกลุ่ม\n(Max 20)']
+            theta_vals = ['ห้วงเวลาวิกาล (Max 20)', 'พื้นที่ชายแดน (Max 30)',
+                          'ความถี่ในการผ่าน (Max 20)', 'ยานพาหนะต่างถิ่น (Max 10)',
+                          'การเคลื่อนที่แบบกลุ่ม (Max 20)']
             r_vals.append(r_vals[0]); theta_vals.append(theta_vals[0])
             fig_radar = go.Figure()
             fig_radar.add_trace(go.Scatterpolar(
                 r=r_vals, theta=theta_vals, fill='toself',
                 name='พฤติกรรมเป้าหมาย', line_color='#9f1239',
-                fillcolor='rgba(159,18,57,0.4)'))
+                fillcolor='rgba(159, 18, 57, 0.4)'))
             fig_radar.update_layout(
                 polar=dict(radialaxis=dict(visible=True, range=[0,30], showticklabels=False),
                            gridshape='linear'),
                 showlegend=False, height=300,
-                margin=dict(t=20,b=20,l=40,r=40),
+                margin=dict(t=20, b=20, l=40, r=40),
                 title=dict(text="📊 แผนภูมิวิเคราะห์รูปแบบพฤติกรรม (Risk Radar)", font=dict(size=14)),
                 paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
             st.plotly_chart(fig_radar, use_container_width=True,
-                            key=f"radar_{selected_target}_{tab_key}")
+                            key=f"radar_chart_{selected_target}_{tab_key}")
         else:
             st.info("ไม่มีข้อมูล Radar Chart")
 
     with col_summary:
-        n_cams     = target_info.get('ผ่านร่วมกัน (ด่าน)', '—')
-        last_cam   = target_info.get('จุดตรวจพบล่าสุด', '—')
-        last_time  = str(target_info.get('เวลาโผล่ล่าสุด', '—'))[:5]
-        dist       = target_info.get('ระยะห่างเฉลี่ย', target_info.get('Total_Dist', '—'))
-        speed      = target_info.get('Speed_Warp', '—')
-
-        cars_display = '\n'.join(f"  - `{c}`" for c in cars) if cars else '  - ไม่ระบุ'
+        n_cams    = target_info.get('ผ่านร่วมกัน (ด่าน)', '—')
+        last_cam  = str(target_info.get('จุดตรวจพบล่าสุด', '—'))
+        last_time = str(target_info.get('เวลาโผล่ล่าสุด', '—'))[:8]
+        dist      = target_info.get('ระยะห่างเฉลี่ย', target_info.get('Total_Dist', '—'))
+        speed     = target_info.get('Speed_Warp', '—')
 
         summary_md = f"""
-**🚗 รายการยานพาหนะในกลุ่ม:**
-{cars_display}
+**📌 ทะเบียนยานพาหนะในกลุ่ม:** {', '.join(str(c) for c in cars)}
 
-**📷 จำนวนด่านที่ผ่าน:** {n_cams}
+**📊 สถิติการตรวจพบสะสม:** ผ่านด่าน {n_cams} จุด
 
-**📍 จุดตรวจล่าสุด:** {last_cam}
+**📍 จุดตรวจที่พบล่าสุด:** {last_cam}
 
-**🕐 เวลาล่าสุด:** {last_time} น.
+**🕐 เวลาล่าสุดที่พบ:** {last_time} น.
 
-**📏 ระยะทาง:** {dist}
-
-**💨 ความเร็วผิดปกติ:** {speed}
+**📏 ระยะห่างเฉลี่ย:** {dist}
 """
         if is_convoy:
-            summary_md += f"\n\n---\n**🚘 บทวิเคราะห์ขบวนรถ (AI Insight):**\nขบวนรถ {len(cars)} คัน ผ่านด่าน **{n_cams}** จุด โดยมีพฤติกรรม: {behav}"
+            summary_md += (f"\n\n---\n**🚘 บทวิเคราะห์พฤติกรรมขบวนรถ (AI Insight):**\n"
+                           f"ขบวนรถ {len(cars)} คัน ผ่านด่าน **{n_cams}** จุด ระยะห่างเฉลี่ย **{dist}** "
+                           f"ไม่พบพฤติกรรมการสลับคันนำ")
         elif is_clone:
-            summary_md += f"\n\n---\n**🚨 บทวิเคราะห์สวมทะเบียน (AI Insight):**\n{behav}"
+            summary_md += (f"\n\n---\n**🚨 บทวิเคราะห์สวมทะเบียน (AI Insight):**\n"
+                           f"ตรวจพบความเร็วเกินขีดทางกายภาพ **{speed} กม./ชม.** "
+                           f"บ่งชี้การใช้ทะเบียนปลอมซ้อนในสองจุดพร้อมกัน")
+        elif is_anomaly:
+            summary_md += (f"\n\n---\n**🔄 บทวิเคราะห์มุดช่องโหว่ (AI Insight):**\n"
+                           f"เป้าหมายใช้เส้นทางหลีกเลี่ยงการตรวจ บนระยะทาง **{dist}** กม.")
 
         st.markdown("<div class='dossier-summary'>", unsafe_allow_html=True)
         st.markdown("#### 📋 สรุปข้อมูลประวัติเป้าหมาย (Intelligence Summary)")
         st.markdown(summary_md)
         st.markdown("</div>", unsafe_allow_html=True)
 
-    # ── ข้อมูลโดยละเอียดทุกคอลัมน์ ──
-    st.markdown("---")
-    with st.expander("📄 ดูข้อมูลทั้งหมดของเป้าหมายนี้", expanded=False):
-        row_dict = {k: v for k, v in target_info.items()
-                    if k not in ('Radar_Data', 'Cars_List') and pd.notna(v) and v != ''}
-        for k, v in row_dict.items():
-            st.markdown(f"**{k}:** `{v}`")
+    # ── แผนที่ (Cloud View: ไม่มีข้อมูล GPS ดิบ) ──
+    st.markdown("### 🗺️ แผนที่ระบุพิกัดเป้าหมายทางยุทธวิธี (2D Map)")
+    st.info("⚠️ **Cloud View:** ข้อมูลพิกัด GPS รายละเอียดจำเป็นต้องใช้ระบบหลักในเครื่อง — "
+            "กรุณาตรวจสอบแผนที่เพิ่มเติมผ่าน http://localhost:8501")
 
-    excel_download_button(
-        pd.DataFrame([target_info.to_dict()]).drop(columns=['Radar_Data'], errors='ignore'),
-        f"evidence_{selected_target}.xlsx", "📥 Export ข้อมูลเป้าหมาย (Excel)"
-    )
+
 
 # ══ Clickable Table (เหมือน app.py) ══════════════════════════════════════════
 def show_clickable_table_cloud(df_display: pd.DataFrame, table_key: str, priority_df: pd.DataFrame, tab_key: str = ""):
