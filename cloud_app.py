@@ -1,289 +1,316 @@
 """
-cloud_app.py — HWPD i-Trap Cloud Viewer
-แสดงผลจาก Supabase สำหรับลูกน้องดูออนไลน์ 24/7
-ไม่มีการคำนวณ ไม่มีการ Upload — อ่านผลอย่างเดียว
+cloud_app.py — HWPD i-Trap Cloud Intelligence View
+หน้าตาเหมือน app.py เพียงแต่อ่านข้อมูลจาก Supabase
 """
 import streamlit as st
 import pandas as pd
+import json
 from datetime import datetime
 
-# ─── Page Config ──────────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="HWPD 60 i-Trap | Intelligence View",
-    page_icon="🛡️",
-    layout="wide",
+    page_title="HWPD 60 i-Trap | Intelligence Command",
+    page_icon="🛡️", layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# ─── CSS ──────────────────────────────────────────────────────────────────────
+# ══ CSS เหมือน app.py ════════════════════════════════════════════════════════
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700;800&display=swap');
-html, body, .stApp, [class*="css"] {
-    font-family: 'Sarabun', 'TH Sarabun PSK', 'TH Sarabun New', sans-serif !important;
-    font-size: 16px !important;
-}
-html, body { background: #0a0e1a !important; }
-.stApp { background: linear-gradient(135deg, #0a0e1a 0%, #0d1321 50%, #0a1628 100%) !important; }
-.block-container { padding-top: 2rem !important; padding-left: 2rem !important;
-    padding-right: 2rem !important; max-width: 100% !important; }
-section[data-testid="stSidebar"] {
-    background: linear-gradient(180deg, #0d1321 0%, #0f172a 100%) !important;
-    border-right: 1px solid rgba(59,130,246,0.15) !important;
-}
-[data-testid="stMetricValue"] { font-size:28px !important; font-weight:800 !important; color:#e2e8f0 !important; }
-[data-testid="stMetricLabel"] { font-size:13px !important; color:#94a3b8 !important; }
+html,body,.stApp,[class*="css"]{font-family:'Sarabun','TH Sarabun PSK',sans-serif!important;font-size:16px!important}
+html,body{background:#0a0e1a!important}
+.stApp{background:linear-gradient(135deg,#0a0e1a 0%,#0d1321 50%,#0a1628 100%)!important}
+.block-container{padding-top:1.5rem!important;padding-left:2rem!important;padding-right:2rem!important;max-width:100%!important}
+section[data-testid="stSidebar"]{background:linear-gradient(180deg,#0d1321 0%,#0f172a 100%)!important;border-right:1px solid rgba(59,130,246,0.15)!important}
+[data-testid="stMetricValue"]{font-size:26px!important;font-weight:800!important;color:#e2e8f0!important}
+[data-testid="stMetricLabel"]{font-size:13px!important;color:#94a3b8!important}
+.stTabs [data-baseweb="tab-list"]{background:rgba(15,23,42,0.6)!important;border-radius:12px!important;padding:4px!important}
+.stTabs [data-baseweb="tab"]{color:#94a3b8!important;font-weight:600!important;border-radius:8px!important}
+.stTabs [aria-selected="true"]{background:linear-gradient(135deg,#3b82f6,#6366f1)!important;color:white!important}
+
+/* Priority Card */
+.pri-card{background:rgba(15,23,42,0.75);border-radius:12px;padding:14px 18px;margin-bottom:10px;
+    border:1px solid rgba(255,255,255,0.06);transition:transform .15s ease;}
+.pri-card:hover{transform:translateY(-2px);}
+.badge{display:inline-block;padding:2px 10px;border-radius:20px;font-size:12px;font-weight:700}
+.badge-red  {background:rgba(239,68,68,.15);color:#ef4444;border:1px solid rgba(239,68,68,.3)}
+.badge-ora  {background:rgba(249,115,22,.15);color:#f97316;border:1px solid rgba(249,115,22,.3)}
+.badge-yel  {background:rgba(234,179,8,.15);color:#eab308;border:1px solid rgba(234,179,8,.3)}
+.badge-grn  {background:rgba(16,185,129,.15);color:#10b981;border:1px solid rgba(16,185,129,.3)}
+.badge-blue {background:rgba(59,130,246,.15);color:#60a5fa;border:1px solid rgba(59,130,246,.3)}
+
+/* Ticker */
+@keyframes ticker{0%{transform:translateX(100%)}100%{transform:translateX(-200%)}}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+.ticker-wrap{overflow:hidden;background:linear-gradient(90deg,#020617,#0f172a,#020617);
+    padding:9px 0;border-radius:8px;color:#38bdf8;border:1px solid rgba(56,189,248,0.15);margin-bottom:16px}
+.ticker-content{display:inline-block;animation:ticker 40s linear infinite;font-weight:500;font-size:13px;white-space:nowrap}
+.live-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#10b981;
+    margin-right:6px;animation:blink 1.5s infinite}
 </style>
 """, unsafe_allow_html=True)
 
-# ─── Auth + Sync Modules ──────────────────────────────────────────────────────
+# ══ Auth ══════════════════════════════════════════════════════════════════════
 from auth import require_login, get_current_user, has_role, logout, ROLE_LABEL
 from supabase_sync import (
     pull_available_dates, pull_daily_report, pull_realtime,
     pull_suspects, pull_upload_log,
 )
-
-# ─── Login Guard ──────────────────────────────────────────────────────────────
 require_login()
 
-# ─── Helper: Priority Table (ต้องนิยามก่อนเรียกใช้) ─────────────────────────
-RISK_COLOR = {
-    'วิกฤต':    '#ef4444',
-    'สูง':      '#f97316',
-    'ปานกลาง': '#eab308',
-    'ต่ำ':      '#22c55e',
-}
+# ══ Sidebar ═══════════════════════════════════════════════════════════════════
+st.sidebar.markdown("""
+<div style='text-align:center;padding:14px 0 8px'>
+  <div style='font-size:38px'>🛡️</div>
+  <div style='font-size:15px;font-weight:800;color:#93c5fd;letter-spacing:2px'>HWPD 60 i-Trap</div>
+  <div style='font-size:11px;color:#64748b;margin-top:3px'>Intelligence Command System</div>
+  <div style='font-size:11px;color:#10b981;margin-top:4px'>☁️ Cloud View — Live</div>
+</div>
+<hr style='border-color:rgba(59,130,246,0.2);margin:6px 0'>
+""", unsafe_allow_html=True)
 
-def show_priority_table(df: pd.DataFrame, table_key: str = "tbl"):
-    """แสดงตารางเป้าหมายแบบ card"""
+_cu = get_current_user()
+if _cu:
+    _rl = ROLE_LABEL.get(_cu.get('role',''), _cu.get('role',''))
+    st.sidebar.markdown(
+        f"<div style='background:rgba(99,102,241,.12);padding:8px 12px;border-radius:8px;margin-bottom:6px'>"
+        f"<span style='font-size:11px;color:#94a3b8'>ผู้ใช้งาน</span><br>"
+        f"<b style='color:#e2e8f0'>{_cu.get('display_name',_cu.get('username',''))}</b><br>"
+        f"<span style='font-size:11px;color:#818cf8'>{_rl}</span></div>",
+        unsafe_allow_html=True)
+    if st.sidebar.button("🔓 ออกจากระบบ", use_container_width=True):
+        logout(); st.rerun()
+
+st.sidebar.markdown("---")
+st.sidebar.markdown("### 📅 เลือกวันที่รายงาน")
+available_dates = pull_available_dates()
+selected_date   = st.sidebar.selectbox("วันที่:", available_dates,
+                                        format_func=lambda d: f"📅 {d}") if available_dates else None
+st.sidebar.markdown("---")
+if st.sidebar.button("🔄 รีเฟรชข้อมูล", use_container_width=True):
+    pull_available_dates.clear(); pull_daily_report.clear()
+    pull_realtime.clear(); pull_suspects.clear(); pull_upload_log.clear()
+    st.rerun()
+
+if has_role('super_admin','admin'):
+    with st.sidebar.expander("📋 ประวัติอัปโหลด", expanded=False):
+        log_df = pull_upload_log(8)
+        if not log_df.empty:
+            for _, r in log_df.iterrows():
+                ts = str(r.get('uploaded_at',''))[:16].replace('T',' ')
+                st.markdown(f"<div style='font-size:12px;padding:4px 0;border-bottom:1px solid rgba(255,255,255,.06)'>"
+                            f"<b style='color:#60a5fa'>{r.get('display_name') or r.get('username','?')}</b><br>"
+                            f"📅 {r.get('report_date','?')} | {ts}<br>"
+                            f"<span style='color:#64748b'>{int(r.get('record_count',0)):,} records</span></div>",
+                            unsafe_allow_html=True)
+
+# ══ Helper Functions ═══════════════════════════════════════════════════════════
+def get_plate(row: dict) -> str:
+    """ดึงทะเบียนหลัก — รองรับทุกรูปแบบ"""
+    cars = row.get('Cars_List')
+    if isinstance(cars, list) and cars:
+        return ' / '.join(str(c) for c in cars[:3]) + ('…' if len(cars) > 3 else '')
+    if isinstance(cars, str):
+        try:
+            c = json.loads(cars)
+            if isinstance(c, list) and c: return c[0]
+        except: pass
+        return cars
+    for col in ('เป้าหมาย','Target_ID','plate','ทะเบียนรถ'):
+        if v := row.get(col): return str(v)
+    return '—'
+
+def get_type_badge(eng_type: str) -> str:
+    t = str(eng_type)
+    if 'ขบวน' in t or 'convoy' in t.lower():   return '<span class="badge badge-red">🔴 ขบวน</span>'
+    if 'กลุ่ม' in t or 'group' in t.lower():   return '<span class="badge badge-ora">🟠 กลุ่มรถ</span>'
+    if 'ซ้ำ'   in t or 'repeat' in t.lower():  return '<span class="badge badge-yel">🟡 วิ่งซ้ำ</span>'
+    if 'เป้า'  in t or 'target' in t.lower():  return '<span class="badge badge-red">🎯 เป้าหมาย</span>'
+    return f'<span class="badge badge-blue">{t or "ไม่ระบุ"}</span>'
+
+def score_to_bar(score) -> str:
+    try:
+        s = float(score)
+        w = min(100, max(0, s / 2))
+        color = '#ef4444' if s >= 120 else '#f97316' if s >= 80 else '#eab308' if s >= 40 else '#22c55e'
+        return (f"<div style='background:rgba(255,255,255,.08);border-radius:4px;height:6px;margin-top:4px'>"
+                f"<div style='width:{w}%;background:{color};height:6px;border-radius:4px'></div></div>")
+    except: return ''
+
+def render_priority_cards(df: pd.DataFrame, tab_key: str = "x"):
     if df.empty:
-        st.info("ไม่พบรายการเป้าหมาย")
+        st.info("✅ ยังไม่พบรถต้องสงสัยในระบบ")
         return
 
-    max_n  = len(df)
-
-    # แสดง slider เฉพาะเมื่อมีมากกว่า 20 คัน
-    if max_n > 20:
-        show_n = st.slider("แสดง (คัน):", 10, max_n, min(50, max_n), key=f"slider_{table_key}")
+    n = len(df)
+    if n > 20:
+        show_n = st.slider("แสดง (คัน):", 10, min(n, 200), min(50, n), key=f"sld_{tab_key}")
     else:
-        show_n = max_n
+        show_n = n
 
-    df_show = df.head(show_n)
+    st.markdown(f"<div style='color:#64748b;font-size:13px;margin-bottom:8px'>แสดง {show_n} / {n} รายการ</div>",
+                unsafe_allow_html=True)
 
-    for _, row in df_show.iterrows():
-        plate    = row.get('ทะเบียนรถ') or row.get('plate', '—')
-        province = row.get('จังหวัด')   or row.get('province', '')
-        risk     = row.get('ระดับความเสี่ยง') or row.get('risk_level', '—')
-        eng_type = row.get('ประเภท')    or row.get('engine_type', '—')
-        score    = row.get('คะแนนรวม') or row.get('total_score', 0)
-        color    = RISK_COLOR.get(str(risk), '#64748b')
+    for _, row in df.head(show_n).iterrows():
+        r      = row.to_dict()
+        plate  = get_plate(r)
+        typ    = str(r.get('ประเภท', r.get('engine_type', '')))
+        score  = r.get('Risk Score', r.get('risk_score', r.get('คะแนนรวม', 0)))
+        behav  = str(r.get('พฤติกรรมต้องสงสัย', r.get('เหตุผลหลัก', r.get('เหตุผล', '—'))))[:160]
+        cam    = str(r.get('จุดตรวจพบล่าสุด', r.get('last_cam', '—')))
+        t_last = str(r.get('เวลาโผล่ล่าสุด',  r.get('last_time', '—')))[:5]
+        n_cams = r.get('ผ่านร่วมกัน (ด่าน)', r.get('กล้องที่พบ', '—'))
+
+        badge = get_type_badge(typ)
+        bar   = score_to_bar(score)
+        score_disp = int(float(score)) if str(score).replace('.','').isdigit() else score
 
         st.markdown(f"""
-        <div style='background:rgba(15,23,42,0.7);border-left:4px solid {color};
-            padding:12px 16px;border-radius:8px;margin-bottom:8px;'>
-            <div style='display:flex;justify-content:space-between;align-items:center;'>
-                <div>
-                    <span style='font-size:16px;font-weight:700;color:#e2e8f0;'>🚗 {plate}</span>
-                    <span style='font-size:13px;color:#94a3b8;margin-left:8px;'>{province}</span>
-                </div>
-                <div style='text-align:right;'>
-                    <span style='background:{color}22;color:{color};border:1px solid {color}44;
-                        padding:2px 10px;border-radius:12px;font-size:12px;font-weight:600;'>{risk}</span>
-                    <span style='color:#64748b;font-size:12px;margin-left:8px;'>คะแนน {score}</span>
-                </div>
+        <div class="pri-card">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start">
+            <div>
+              <span style="font-size:17px;font-weight:800;color:#e2e8f0">🚗 {plate}</span>
+              &nbsp;{badge}
             </div>
-            <div style='font-size:12px;color:#64748b;margin-top:4px;'>📋 {eng_type}</div>
+            <div style="text-align:right">
+              <span style="font-size:20px;font-weight:800;color:#f97316">{score_disp}</span>
+              <span style="font-size:11px;color:#64748b"> คะแนน</span>
+            </div>
+          </div>
+          {bar}
+          <div style="margin-top:8px;font-size:13px;color:#94a3b8;line-height:1.6">
+            📋 {behav}<br>
+            📍 <b style="color:#60a5fa">{cam}</b> &nbsp;|&nbsp;
+            🕐 {t_last} &nbsp;|&nbsp;
+            📷 {n_cams} ด่าน
+          </div>
         </div>
         """, unsafe_allow_html=True)
 
-    if len(df) > show_n:
-        st.caption(f"... และอีก {len(df)-show_n} รายการ (เลื่อน slider เพื่อดูเพิ่ม)")
-
-
-# ─── Sidebar ──────────────────────────────────────────────────────────────────
-st.sidebar.markdown("""
-<div style='text-align:center; padding:14px 0 8px 0;'>
-    <div style='font-size:40px;'>🛡️</div>
-    <div style='font-size:16px; font-weight:800; color:#93c5fd; letter-spacing:2px;'>HWPD 60 i-Trap</div>
-    <div style='font-size:12px; color:#64748b; margin-top:4px;'>Intelligence Command System</div>
-    <div style='font-size:11px; color:#10b981; margin-top:6px;'>☁️ Cloud View — Live Data</div>
+# ══ Main Content ═══════════════════════════════════════════════════════════════
+# Header
+now_th = datetime.now().strftime('%d/%m/%Y %H:%M')
+st.markdown(f"""
+<div style='background:rgba(15,23,42,.6);border:1px solid rgba(56,189,248,.15);border-radius:10px;
+    padding:10px 20px;margin-bottom:16px'>
+  <span class="live-dot"></span>
+  <span style='font-size:13px;color:#38bdf8;font-weight:600'>SYSTEM ONLINE</span>
+  <span style='font-size:12px;color:#475569;margin-left:12px'>| HWPD 60 COMMAND CENTER ACTIVE | {now_th}</span>
 </div>
-<hr style='border-color:rgba(59,130,246,0.2); margin:8px 0;'>
 """, unsafe_allow_html=True)
 
-# User info
-_cu = get_current_user()
-if _cu:
-    _rl = ROLE_LABEL.get(_cu.get('role', ''), _cu.get('role', ''))
-    st.sidebar.markdown(
-        f"<div style='background:rgba(99,102,241,0.12);padding:8px 12px;border-radius:8px;margin-bottom:8px;'>"
-        f"<span style='font-size:12px;color:#94a3b8;'>ผู้ใช้งาน</span><br>"
-        f"<span style='font-size:14px;font-weight:700;color:#e2e8f0;'>{_cu.get('display_name', _cu.get('username',''))}</span><br>"
-        f"<span style='font-size:11px;color:#818cf8;'>{_rl}</span>"
-        f"</div>", unsafe_allow_html=True
-    )
-    if st.sidebar.button("🔓 ออกจากระบบ", use_container_width=True):
-        logout()
-        st.rerun()
-
-st.sidebar.markdown("---")
-
-# Date Picker
-st.sidebar.markdown("### 📅 เลือกวันที่")
-available_dates = pull_available_dates()
-
-if available_dates:
-    selected_date = st.sidebar.selectbox(
-        "วันที่รายงาน:",
-        available_dates,
-        format_func=lambda d: f"📅 {d}"
-    )
-else:
-    st.sidebar.warning("ยังไม่มีข้อมูลใน Cloud")
-    selected_date = None
-
-st.sidebar.markdown("---")
-
-if st.sidebar.button("🔄 รีเฟรชข้อมูล", use_container_width=True):
-    pull_available_dates.clear()
-    pull_daily_report.clear()
-    pull_realtime.clear()
-    pull_suspects.clear()
-    pull_upload_log.clear()
-    st.rerun()
-
-# Upload log (admin ขึ้นไปเท่านั้น)
-if has_role('super_admin', 'admin'):
-    st.sidebar.markdown("### 📋 อัปโหลดล่าสุด")
-    log_df = pull_upload_log(10)
-    if not log_df.empty:
-        for _, row in log_df.iterrows():
-            ts    = str(row.get('uploaded_at', ''))[:16].replace('T', ' ')
-            uname = row.get('display_name') or row.get('username', '?')
-            rdate = row.get('report_date', '?')
-            cnt   = row.get('record_count', 0)
-            st.sidebar.markdown(
-                f"<div style='background:rgba(15,23,42,0.6);padding:6px 10px;border-radius:6px;"
-                f"margin-bottom:4px;font-size:12px;'>"
-                f"<span style='color:#60a5fa;font-weight:600;'>{uname}</span><br>"
-                f"📅 {rdate} | 🕐 {ts}<br>"
-                f"<span style='color:#64748b;'>{cnt:,} records</span>"
-                f"</div>", unsafe_allow_html=True
-            )
-    else:
-        st.sidebar.caption("ยังไม่มีประวัติ")
-
-# ─── Header ───────────────────────────────────────────────────────────────────
 st.markdown("""
-<div style='text-align:center; padding:20px 0 10px 0;'>
-    <div style='font-size:26px; font-weight:800; color:#e2e8f0; margin-bottom:4px;'>
-        🛡️ HWPD 60 Intelligence Target & Trap
-    </div>
-    <div style='font-size:13px; color:#64748b;'>
-        ศูนย์ปฏิบัติการข่าวกรองสกัดกั้นยาเสพติดชายแดน | Cloud Intelligence View
-    </div>
+<div style='padding:8px 0 16px'>
+  <div style='font-size:24px;font-weight:800;color:#e2e8f0'>
+    🛡️ ข้อมูลสรุปเป้าหมายสำคัญ (Intelligence Brief)
+  </div>
+  <div style='font-size:13px;color:#64748b;margin-top:4px'>
+    ศูนย์ปฏิบัติการข่าวกรองสกัดกั้นยาเสพติดชายแดน | HWPD 60 i-Trap Command Center
+  </div>
 </div>
-<hr style='border-color:rgba(59,130,246,0.15); margin-bottom:16px;'>
 """, unsafe_allow_html=True)
 
-# ─── No data guard ────────────────────────────────────────────────────────────
 if not selected_date:
-    st.info("⏳ ยังไม่มีข้อมูลใน Cloud — รอให้ Admin อัปโหลดข้อมูลก่อนครับ")
+    st.warning("⏳ ยังไม่มีข้อมูลใน Cloud — Admin ต้องอัปโหลดข้อมูลก่อนครับ")
     st.stop()
 
-# ─── Load data ────────────────────────────────────────────────────────────────
-report     = pull_daily_report(selected_date)
+# Load data
+report      = pull_daily_report(selected_date)
 priority_df = report.get('priority_df', pd.DataFrame())
-rec_count  = report.get('record_count', 0)
-uploader   = report.get('uploaded_by', 'ไม่ระบุ')
+rec_count   = report.get('record_count', 0)
+uploader    = report.get('uploaded_by', 'ไม่ระบุ')
 
-today_str  = datetime.now().strftime('%Y-%m-%d')
-rt_data    = pull_realtime(today_str) if selected_date == today_str else None
+today_str   = datetime.now().strftime('%Y-%m-%d')
+rt_data     = pull_realtime(today_str) if selected_date == today_str else None
 
-# ─── Metrics ──────────────────────────────────────────────────────────────────
-st.markdown(f"### 📊 ภาพรวม — วันที่ {selected_date}")
+# Metrics
+n_targets   = len(priority_df)
+n_confirmed = 0; n_watch = 0
+if not priority_df.empty and 'ประเภท' in priority_df.columns:
+    n_confirmed = int(priority_df['ประเภท'].str.contains('ขบวน|กลุ่มรถ|เป้าหมาย', na=False).sum())
+    n_watch     = n_targets - n_confirmed
 
-n_targets  = len(priority_df) if not priority_df.empty else 0
-n_critical = 0
-n_high     = 0
-if not priority_df.empty and 'ระดับความเสี่ยง' in priority_df.columns:
-    n_critical = int((priority_df['ระดับความเสี่ยง'] == 'วิกฤต').sum())
-    n_high     = int((priority_df['ระดับความเสี่ยง'] == 'สูง').sum())
-n_rt = rt_data.get('record_count', 0) if rt_data else 0
-
-c1, c2, c3, c4, c5 = st.columns(5)
-with c1: st.metric("🚗 บันทึกทั้งหมด", f"{rec_count:,}")
-with c2: st.metric("🎯 รถเป้าหมาย",     f"{n_targets:,}")
-with c3: st.metric("🔴 วิกฤต",          f"{n_critical:,}")
-with c4: st.metric("🟠 สูง",            f"{n_high:,}")
-with c5: st.metric("⚡ Realtime วันนี้", f"{n_rt:,}" if rt_data else "—")
+c1,c2,c3,c4,c5 = st.columns(5)
+with c1: st.metric("🚗 บันทึกทั้งหมด",  f"{rec_count:,}")
+with c2: st.metric("🎯 เป้าหมายทั้งหมด", f"{n_targets:,}")
+with c3: st.metric("🔴 ยืนยัน",          f"{n_confirmed:,}")
+with c4: st.metric("🟡 น่าสงสัย",        f"{n_watch:,}")
+with c5: st.metric("⚡ Realtime วันนี้", f"{rt_data.get('record_count',0):,}" if rt_data else "—")
 
 st.markdown("---")
 
-# ─── Tabs ─────────────────────────────────────────────────────────────────────
-tab_rt, tab_daily, tab_suspect = st.tabs([
+# Tabs
+tab_rt, tab_daily, tab_repeat = st.tabs([
     "⚡ Realtime (วันนี้)",
     f"📅 ประจำวัน ({selected_date})",
     "🔁 รถวิ่งซ้ำ (Repeat Offenders)"
 ])
 
-# ══ TAB 1: REALTIME ═══════════════════════════════════════════════════════════
+# ── TAB Realtime ──────────────────────────────────────────────────────────────
 with tab_rt:
     if selected_date != today_str:
-        st.info(f"⚠️ Realtime ใช้ได้เฉพาะวันปัจจุบัน ({today_str})\nกรุณาเลือกวันที่ {today_str} ในเมนูซ้าย")
+        st.info(f"⚠️ Realtime ใช้ได้เฉพาะวันที่ {today_str} — กรุณาเลือกวันนี้ใน Sidebar")
     elif rt_data is None:
         st.markdown("""
-        <div style='background:rgba(245,158,11,0.1);border-left:4px solid #f59e0b;
-            padding:24px;border-radius:12px;margin:16px 0;'>
-            <div style='font-size:28px;margin-bottom:8px;'>⏳</div>
-            <div style='font-size:18px;font-weight:700;color:#fbbf24;'>ยังไม่มีข้อมูล Realtime วันนี้</div>
-            <div style='font-size:14px;color:#94a3b8;margin-top:8px;'>
-                รอให้ Admin อัปโหลดข้อมูลกะแรกของวันครับ — หน้านี้จะอัปเดตอัตโนมัติ
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
+        <div style='background:rgba(245,158,11,.1);border-left:4px solid #f59e0b;
+            padding:24px;border-radius:12px;margin-top:16px'>
+          <div style='font-size:28px'>⏳</div>
+          <div style='font-size:18px;font-weight:700;color:#fbbf24;margin-top:8px'>
+            ยังไม่มีข้อมูล Realtime วันนี้
+          </div>
+          <div style='font-size:14px;color:#94a3b8;margin-top:8px'>
+            รอ Admin อัปโหลดข้อมูลกะแรกของวัน — กด 🔄 รีเฟรชข้อมูล ทุก 15 นาที
+          </div>
+        </div>""", unsafe_allow_html=True)
     else:
         rt_priority = rt_data.get('priority_df', pd.DataFrame())
-        cr1, cr2, cr3 = st.columns(3)
-        with cr1: st.metric("⚡ Records วันนี้", f"{rt_data.get('record_count', 0):,}")
+        cr1,cr2,cr3,cr4 = st.columns(4)
+        with cr1: st.metric("⚡ Records วันนี้",   f"{rt_data.get('record_count',0):,}")
         with cr2:
-            ft = str(rt_data.get('first_time', ''))[:5]
-            lt = str(rt_data.get('last_time', ''))[:5]
-            st.metric("🕐 ช่วงเวลา", f"{ft} – {lt}")
-        with cr3: st.metric("📤 Upload ครั้งที่", f"{rt_data.get('upload_count', 1)}")
+            ft = str(rt_data.get('first_time',''))[:5]
+            lt = str(rt_data.get('last_time',''))[:5]
+            st.metric("🕐 ช่วงเวลา", f"{ft} – {lt} น.")
+        with cr3: st.metric("📤 Upload ครั้งที่",   str(rt_data.get('upload_count',1)))
+        with cr4: st.metric("🎯 เป้าหมายพบ",       str(len(rt_priority)) if not rt_priority.empty else "0")
 
+        st.markdown("---")
         if not rt_priority.empty:
             st.markdown(f"#### 🎯 รถเป้าหมาย Realtime ({len(rt_priority)} คัน)")
-            show_priority_table(rt_priority, "rt")
+            render_priority_cards(rt_priority, "rt")
         else:
             st.success("✅ ยังไม่พบรถต้องสงสัยในช่วงนี้")
 
-# ══ TAB 2: DAILY ══════════════════════════════════════════════════════════════
+# ── TAB Daily ─────────────────────────────────────────────────────────────────
 with tab_daily:
     if priority_df.empty:
         st.info(f"ยังไม่มีผลวิเคราะห์สำหรับวันที่ {selected_date}")
     else:
-        st.markdown(f"#### 🎯 รายชื่อรถเป้าหมาย — วันที่ {selected_date} ({len(priority_df)} คัน)")
-        st.caption(f"📤 อัปโหลดโดย: **{uploader}** | 📊 จากข้อมูล **{rec_count:,}** รายการ")
-        show_priority_table(priority_df, "daily")
+        # Ticker
+        plates_str = " ▸ ".join(
+            get_plate(r) for _, r in priority_df.head(15).iterrows()
+        )
+        st.markdown(f"""
+        <div class="ticker-wrap">
+          <span class="ticker-content">
+            <span class="live-dot"></span>
+            <b>PRIORITY TARGETS {selected_date}</b> &nbsp; ▸ &nbsp; {plates_str}
+          </span>
+        </div>""", unsafe_allow_html=True)
 
-# ══ TAB 3: REPEAT OFFENDERS ═══════════════════════════════════════════════════
-with tab_suspect:
+        st.markdown(
+            f"#### 🎯 รายชื่อรถเป้าหมาย ประจำวันที่ {selected_date} ({n_targets} คัน)")
+        st.caption(f"📤 อัปโหลดโดย: **{uploader}** | 📊 ข้อมูล {rec_count:,} รายการ")
+        render_priority_cards(priority_df, "daily")
+
+# ── TAB Repeat Offenders ──────────────────────────────────────────────────────
+with tab_repeat:
     suspect_df = pull_suspects(200)
     if suspect_df.empty:
-        st.info("ยังไม่มีข้อมูลรถวิ่งซ้ำ")
+        st.info("ยังไม่มีข้อมูลรถวิ่งซ้ำใน Cloud")
     else:
         st.markdown(f"#### 🔁 รถที่ปรากฏซ้ำในระบบ ({len(suspect_df)} คัน)")
-        col_map = {
-            'plate':        'ทะเบียน',
-            'seen_count':   'จำนวนครั้ง',
-            'last_seen':    'พบล่าสุด',
-            'engine_types': 'ประเภทภัยคุกคาม',
-            'risk_score':   'คะแนนความเสี่ยง'
-        }
-        avail_cols = [c for c in col_map if c in suspect_df.columns]
-        st.dataframe(
-            suspect_df[avail_cols].rename(columns=col_map),
-            use_container_width=True,
-            hide_index=True
-        )
+        col_map = {'plate':'ทะเบียน','seen_count':'ครั้งที่พบ',
+                   'last_seen':'พบล่าสุด','engine_types':'ประเภทภัยคุกคาม','risk_score':'คะแนน'}
+        avail = [c for c in col_map if c in suspect_df.columns]
+        st.dataframe(suspect_df[avail].rename(columns=col_map),
+                     use_container_width=True, hide_index=True)
