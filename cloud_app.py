@@ -2689,7 +2689,8 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
     # Load dates from Supabase
     available_dates = []
     if _CLOUD_ENABLED and is_supabase_configured():
-        from supabase_sync import supabase
+        from supabase_sync import get_supabase_client
+        supabase = get_supabase_client()
         try:
             res = supabase.table('cloud_daily_reports').select('report_date').order('report_date', desc=True).execute()
             if res.data:
