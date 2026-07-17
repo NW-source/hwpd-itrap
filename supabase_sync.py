@@ -104,6 +104,50 @@ def log_upload(username: str, display_name: str, filename: str,
     except Exception:
         return False
 
+def push_parquet_to_cloud(report_date: str, df_polars) -> bool:
+    """บีบอัด DataFrame แล้วอัปโหลดขึ้น Supabase Storage (itrap-parquet bucket)
+    ใช้สำหรับ Multi-Admin Merge — ให้ทุกเครื่องเห็นข้อมูลรวมเดียวกัน
+    """
+    if not is_supabase_configured():
+        return False
+    try:
+        import io, polars as pl
+        client = get_supabase_client()
+        buf = io.BytesIO()
+        df_polars.write_parquet(buf, compression='zstd', compression_level=3)
+        buf.seek(0)
+        parquet_bytes = buf.read()
+        path = f"{report_date}/merged.parquet"
+        # upload (upsert = overwrite ถ้ามีอยู่แล้ว)
+        client.storage.from_("itrap-parquet").upload(
+            path, parquet_bytes,
+            file_options={"content-type": "application/octet-stream", "upsert": "true"}
+        )
+        return True
+    except Exception as e:
+        st.session_state['_sync_error'] = f"push_parquet: {str(e)[:80]}"
+        return False
+
+def pull_parquet_from_cloud(report_date: str):
+    """ดาวน์โหลด parquet จาก Supabase Storage แล้ว return เป็น Polars DataFrame
+    คืน None ถ้าไม่มีข้อมูลหรือเกิด error
+    """
+    if not is_supabase_configured():
+        return None
+    try:
+        import io, polars as pl
+        client = get_supabase_client()
+        path = f"{report_date}/merged.parquet"
+        data = client.storage.from_("itrap-parquet").download(path)
+        if not data:
+            return None
+        buf = io.BytesIO(data)
+        return pl.read_parquet(buf)
+    except Exception:
+        return None  # ไม่มีไฟล์นี้ใน cloud (ปกติสำหรับวันแรก)
+
+
+
 # ─── PULL Functions (Supabase → Display) ──────────────────────────────────────
 @st.cache_data(ttl=120, show_spinner=False)
 def pull_available_dates() -> list:

@@ -762,18 +762,25 @@ def load_historical_data():
             return pl.DataFrame()
     return pl.DataFrame()
 
-def save_to_memory(new_df_pl, current_db_pl):
+def save_to_memory(new_df_pl, current_db_pl, cloud_db_pl=None):
+    """Merge: new CSV + local parquet + cloud parquet → deduplicate → save"""
     if new_df_pl.is_empty(): return current_db_pl
-    if current_db_pl.is_empty(): combined = new_df_pl
-    else: combined = pl.concat([current_db_pl, new_df_pl], how="vertical_relaxed")
-        
+
+    sources = []
+    if not current_db_pl.is_empty(): sources.append(current_db_pl)
+    if cloud_db_pl is not None and not cloud_db_pl.is_empty():
+        sources.append(cloud_db_pl)
+    sources.append(new_df_pl)
+
+    combined = pl.concat(sources, how="vertical_relaxed") if len(sources) > 1 else new_df_pl
     combined = combined.unique(subset=["ทะเบียน_Full", "Datetime", "จุดติดตั้งกล้อง"], keep="first")
-    
+
     thirty_days_ago = datetime.now() - timedelta(days=30)
     combined = combined.filter(pl.col("Datetime") >= thirty_days_ago)
-    
+
     combined.write_parquet(PARQUET_PATH, compression="zstd")
     return combined
+
 
 def save_daily_report(report_date, priority_df, active_db_pd):
     metrics = {}
@@ -2403,62 +2410,75 @@ if mode == "⚙️ แอดมิน (Admin Portal)":
                         new_db_pl = process_raw_data_polars(dq['raw_df'])
                         
                         if not new_db_pl.is_empty():
-                            active_db_pl = save_to_memory(new_db_pl, historical_db_pl)
-                            load_historical_data.clear()  # clear cache ให้ Executive Dashboard โหลดใหม่
-
-                            # ★ ดึงวันที่จากข้อมูล CSV จริง (ไม่ใช้วันที่อัปโหลด)
+                            # ★ ดึงวันที่จากข้อมูล CSV จริง
                             try:
                                 _data_dates = new_db_pl['Datetime'].cast(pl.Date).unique().sort()
                                 report_date = str(_data_dates[0]) if len(_data_dates) > 0 else datetime.now().strftime('%Y-%m-%d')
                             except:
                                 report_date = datetime.now().strftime('%Y-%m-%d')
 
+                            # ★★ Multi-Admin Merge: ดึง parquet ที่มีอยู่แล้วจาก Cloud ──────
+                            cloud_db_pl = None
+                            if _CLOUD_ENABLED and is_supabase_configured():
+                                with st.spinner(f"☁️ กำลังดึงข้อมูลวันที่ {report_date} จาก Cloud เพื่อ Merge..."):
+                                    from supabase_sync import pull_parquet_from_cloud
+                                    cloud_db_pl = pull_parquet_from_cloud(report_date)
+                                if cloud_db_pl is not None and not cloud_db_pl.is_empty():
+                                    st.info(f"☁️ พบข้อมูลวันนี้ใน Cloud {len(cloud_db_pl):,} รายการ — กำลัง Merge รวมกัน")
+
+                            # ★★ Merge: local parquet + cloud parquet + new CSV ───────────────
+                            active_db_pl = save_to_memory(new_db_pl, historical_db_pl, cloud_db_pl)
+                            load_historical_data.clear()
+
                             if not active_db_pl.is_empty():
-                                # ★ กรองเฉพาะวัน report_date จาก parquet ที่ merge แล้ว
-                                # เพื่อให้วิเคราะห์ข้อมูลทั้งวัน (ไม่ใช่แค่ไฟล์ที่อัปมาใหม่)
+                                # กรองเฉพาะวัน report_date
                                 try:
                                     _report_date_lit = pl.lit(report_date).str.to_date()
                                     active_db_pl_for_date = active_db_pl.filter(
                                         pl.col("Datetime").cast(pl.Date) == _report_date_lit
                                     )
                                 except Exception:
-                                    active_db_pl_for_date = new_db_pl  # fallback
+                                    active_db_pl_for_date = new_db_pl
 
                                 if active_db_pl_for_date.is_empty():
-                                    active_db_pl_for_date = new_db_pl  # fallback
+                                    active_db_pl_for_date = new_db_pl
 
                                 st.caption(f"📊 วิเคราะห์ข้อมูลรวม {len(active_db_pl_for_date):,} รายการ"
-                                           f" (ทั้งวัน {report_date} จาก {len(new_db_pl):,} ใหม่ + ที่มีอยู่เดิม)")
+                                           f" (วัน {report_date} — ใหม่ {len(new_db_pl):,} + Cloud {len(cloud_db_pl) if cloud_db_pl is not None else 0:,} + Local เดิม)")
 
                                 priority_df = run_intelligence_orchestrator(active_db_pl_for_date)
 
                                 active_db_pd = active_db_pl_for_date.to_pandas()
                                 save_daily_report(report_date, priority_df, active_db_pd)
-                                save_realtime_session(active_db_pd, report_date)  # ⚡ สะสม Realtime
+                                save_realtime_session(active_db_pd, report_date)
 
-                                # ── ☁️ Push ผลลัพธ์ขึ้น Supabase Cloud ───────────
+                                # ── ☁️ Push ผลลัพธ์ + parquet ขึ้น Supabase Cloud ────────────
                                 if _CLOUD_ENABLED and is_supabase_configured():
                                     _cu = get_current_user()
                                     _uname = _cu.get('username', 'local') if _cu else 'local'
                                     _dname = _cu.get('display_name', '') if _cu else ''
                                     _fname = st.session_state.get('_upload_filename', 'unknown.csv')
                                     with st.spinner("☁️ กำลัง Sync ขึ้น Cloud..."):
+                                        from supabase_sync import push_parquet_to_cloud
+                                        # ★★ Push merged parquet กลับ Cloud (ให้ Admin คนอื่น pull ได้)
+                                        push_parquet_to_cloud(report_date, active_db_pl_for_date)
                                         # Push priority results
                                         _metrics_dict = {}
                                         _cloud_push_daily(
                                             report_date, priority_df, _metrics_dict,
                                             _uname, len(active_db_pd)
                                         )
-                                        # Push realtime summary (priority only — ไม่ส่งข้อมูลดิบ)
+                                        # Push realtime summary
                                         _cloud_push_rt(
                                             report_date, priority_df, 1,
                                             str(active_db_pd['Datetime'].min()) if 'Datetime' in active_db_pd.columns else '',
                                             str(active_db_pd['Datetime'].max()) if 'Datetime' in active_db_pd.columns else '',
                                             _uname, len(active_db_pd)
                                         )
-                                        # Log upload
                                         _cloud_log_upload(_uname, _dname, _fname, report_date, len(active_db_pd))
-                                    st.caption("☁️ Sync Cloud สำเร็จ")
+                                    st.caption("☁️ Sync Cloud สำเร็จ (รวม Parquet Merge)")
+
+
 
                                 st.success(f"✅ ประมวลผลสำเร็จ! ข้อมูลถูกบันทึกลงฐานข้อมูลเรียบร้อยแล้ว (Report Date: {report_date})")
                                 st.session_state.dq_preview = None 
