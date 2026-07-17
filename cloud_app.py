@@ -321,6 +321,78 @@ if has_role('super_admin','admin'):
                     f"<span style='color:#64748b'>{int(r.get('record_count',0)):,} records</span></div>",
                     unsafe_allow_html=True)
 
+if has_role('super_admin'):
+    st.sidebar.markdown("---")
+    with st.sidebar.expander("👥 จัดการผู้ใช้ (Super Admin)", expanded=False):
+        from auth import get_all_users, update_user_password, deactivate_user, create_user, hash_password
+        all_users = get_all_users()
+
+        if all_users:
+            st.markdown("#### 📋 รายชื่อผู้ใช้")
+            for u in all_users:
+                status_icon = "✅" if u.get('is_active') else "❌"
+                role_icon = {"super_admin":"👑","admin":"🔧","viewer":"👁️"}.get(u.get('role',''),'?')
+                st.markdown(
+                    f"<div style='font-size:12px;padding:6px 0;border-bottom:1px solid rgba(255,255,255,.08)'>"
+                    f"{status_icon} <b>{u.get('display_name','?')}</b> ({u.get('username','')})<br>"
+                    f"{role_icon} {u.get('role','')} | เข้าใช้ล่าสุด: {str(u.get('last_login','—'))[:10]}</div>",
+                    unsafe_allow_html=True)
+
+        st.markdown("---")
+        st.markdown("#### 🔑 เปลี่ยนรหัสผ่าน")
+        user_list = [u['username'] for u in all_users] if all_users else []
+        chg_user = st.selectbox("เลือก User:", user_list, key="chg_user_sel")
+        new_pw1  = st.text_input("รหัสผ่านใหม่:", type="password", key="new_pw1")
+        new_pw2  = st.text_input("ยืนยันรหัสผ่าน:", type="password", key="new_pw2")
+        if st.button("💾 บันทึกรหัสผ่าน", use_container_width=True, key="btn_chg_pw"):
+            if not new_pw1:
+                st.error("กรุณากรอกรหัสผ่านใหม่")
+            elif new_pw1 != new_pw2:
+                st.error("❌ รหัสผ่านไม่ตรงกัน")
+            elif len(new_pw1) < 6:
+                st.error("❌ รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร")
+            else:
+                from auth import update_user_password
+                ok = update_user_password(chg_user, new_pw1)
+                if ok:
+                    st.success(f"✅ เปลี่ยนรหัสผ่านของ {chg_user} สำเร็จ!")
+                else:
+                    st.error("❌ เปลี่ยนรหัสผ่านไม่สำเร็จ")
+
+        st.markdown("---")
+        st.markdown("#### ⚙️ จัดการ Role / สถานะ")
+        mgmt_user = st.selectbox("เลือก User:", [u['username'] for u in all_users if u['username'] != 'supuseradmin'],
+                                  key="mgmt_user_sel")
+        new_role  = st.selectbox("Role ใหม่:", ["viewer","admin","super_admin"], key="mgmt_role_sel")
+        col_r1, col_r2 = st.columns(2)
+        with col_r1:
+            if st.button("🔄 เปลี่ยน Role", use_container_width=True, key="btn_role"):
+                try:
+                    from supabase_sync import get_supabase_client
+                    get_supabase_client().table('users').update({'role': new_role}).eq('username', mgmt_user).execute()
+                    st.success(f"✅ เปลี่ยน role เป็น {new_role}")
+                except Exception as e:
+                    st.error(f"❌ {e}")
+        with col_r2:
+            if st.button("🚫 ปิด User", use_container_width=True, key="btn_deact"):
+                ok = deactivate_user(mgmt_user)
+                st.success(f"✅ ปิด {mgmt_user} แล้ว") if ok else st.error("❌ ไม่สำเร็จ")
+
+        st.markdown("---")
+        st.markdown("#### ➕ สร้าง User ใหม่")
+        n_uname = st.text_input("Username:", key="n_uname")
+        n_dname = st.text_input("ชื่อแสดง:", key="n_dname")
+        n_role  = st.selectbox("Role:", ["viewer","admin","super_admin"], key="n_role")
+        n_pw    = st.text_input("รหัสผ่าน:", type="password", key="n_pw")
+        if st.button("✅ สร้าง User", use_container_width=True, key="btn_create"):
+            if n_uname and n_pw and n_dname:
+                ok = create_user(n_uname.strip().lower(), n_pw, n_role, n_dname)
+                st.success(f"✅ สร้าง {n_uname} สำเร็จ!") if ok else st.error("❌ ไม่สำเร็จ (อาจซ้ำกัน)")
+            else:
+                st.error("กรุณากรอกข้อมูลให้ครบ")
+
+
+
 # ══ Main UI ════════════════════════════════════════════════════════════════════
 # Logo
 import os as _os
