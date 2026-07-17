@@ -2276,7 +2276,16 @@ def show_clickable_table(df_display, table_key, active_db, priority_df):
     
     event = st.dataframe(
         df_clean.style.map(color_score, subset=['Risk Score']),
-        use_container_width=True, on_select="rerun", selection_mode="single-row", hide_index=True, key=f"tbl_{table_key}"
+        use_container_width=True, on_select="rerun", selection_mode="single-row", hide_index=True,
+        key=f"tbl_{table_key}",
+        column_config={
+            'เป้าหมาย': st.column_config.TextColumn(
+                'เป้าหมาย', width='large'
+            ),
+            'พฤติกรรมต้องสงสัย': st.column_config.TextColumn(
+                'พฤติกรรมต้องสงสัย', width='large'
+            ),
+        }
     )
     excel_download_button(df_clean, f"priority_{table_key}.xlsx", "📥 Export ตารางนี้ (Excel)")
     
@@ -2398,10 +2407,25 @@ if mode == "⚙️ แอดมิน (Admin Portal)":
                                 report_date = datetime.now().strftime('%Y-%m-%d')
 
                             if not active_db_pl.is_empty():
-                                # ★ วิเคราะห์เฉพาะวันที่อัปโหลด ไม่ปนกับวันอื่น
-                                priority_df = run_intelligence_orchestrator(new_db_pl)
+                                # ★ กรองเฉพาะวัน report_date จาก parquet ที่ merge แล้ว
+                                # เพื่อให้วิเคราะห์ข้อมูลทั้งวัน (ไม่ใช่แค่ไฟล์ที่อัปมาใหม่)
+                                try:
+                                    _report_date_lit = pl.lit(report_date).str.to_date()
+                                    active_db_pl_for_date = active_db_pl.filter(
+                                        pl.col("Datetime").cast(pl.Date) == _report_date_lit
+                                    )
+                                except Exception:
+                                    active_db_pl_for_date = new_db_pl  # fallback
 
-                                active_db_pd = new_db_pl.to_pandas()
+                                if active_db_pl_for_date.is_empty():
+                                    active_db_pl_for_date = new_db_pl  # fallback
+
+                                st.caption(f"📊 วิเคราะห์ข้อมูลรวม {len(active_db_pl_for_date):,} รายการ"
+                                           f" (ทั้งวัน {report_date} จาก {len(new_db_pl):,} ใหม่ + ที่มีอยู่เดิม)")
+
+                                priority_df = run_intelligence_orchestrator(active_db_pl_for_date)
+
+                                active_db_pd = active_db_pl_for_date.to_pandas()
                                 save_daily_report(report_date, priority_df, active_db_pd)
                                 save_realtime_session(active_db_pd, report_date)  # ⚡ สะสม Realtime
 
