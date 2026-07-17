@@ -746,6 +746,24 @@ _light_css = """    /* ═══ LIGHT MODE ═══ */
     .card-watch .metric-value, .card-watch .metric-label {
         color: #0f172a !important; text-shadow: none !important;
     }
+
+    /* --- SOFT PASTEL CARDS & TICKER (LIGHT MODE) --- */
+    .ticker-wrap, .ticker-wrap * { color: #ffffff !important; }
+    .ticker-content { color: #ffffff !important; font-weight: 600; letter-spacing: 2px; }
+    
+    .card-apex { background: linear-gradient(135deg, #fff1f2 0%, #ffe4e6 100%) !important; box-shadow: 0 4px 10px rgba(0,0,0,0.03) !important; border: 1px solid rgba(225,29,72,0.1) !important; }
+    .card-clone { background: linear-gradient(135deg, #fff7ed 0%, #ffedd5 100%) !important; box-shadow: 0 4px 10px rgba(0,0,0,0.03) !important; border: 1px solid rgba(234,88,12,0.1) !important; }
+    .card-car { background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%) !important; box-shadow: 0 4px 10px rgba(0,0,0,0.03) !important; border: 1px solid rgba(14,165,233,0.1) !important; }
+    .card-anomaly { background: linear-gradient(135deg, #faf5ff 0%, #f3e8ff 100%) !important; box-shadow: 0 4px 10px rgba(0,0,0,0.03) !important; border: 1px solid rgba(168,85,247,0.1) !important; }
+    .card-watch { background: linear-gradient(135deg, #fefce8 0%, #fef9c3 100%) !important; box-shadow: 0 4px 10px rgba(0,0,0,0.03) !important; border: 1px solid rgba(234,179,8,0.1) !important; }
+    
+    .card-apex .metric-value, .card-apex .metric-label,
+    .card-clone .metric-value, .card-clone .metric-label,
+    .card-car .metric-value, .card-car .metric-label,
+    .card-anomaly .metric-value, .card-anomaly .metric-label,
+    .card-watch .metric-value, .card-watch .metric-label {
+        color: #1e293b !important; text-shadow: none !important;
+    }
 """
 
 _active_css = _dark_css if st.session_state.get('theme', 'dark') == 'dark' else _light_css
