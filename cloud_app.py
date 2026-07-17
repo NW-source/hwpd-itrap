@@ -600,10 +600,9 @@ _dark_css = """    /* ═══ DARK MODE ═══ */
     /* Selectbox selected value text */
     [data-testid="stSelectbox"] [data-baseweb="select"] > div { background: rgba(15,23,42,0.8) !important; border: 1px solid rgba(59,130,246,0.25) !important; }
     [data-testid="stSelectbox"] span { color: #cbd5e1 !important; }
-    /* --- SAFELY APPENDED FIXES FOR DARK MODE --- */
-    /* Fix date selectbox text visibility */
-    [data-testid="stSelectbox"] [data-baseweb="select"] span { color: #f8fafc !important; }
-    [data-testid="stSelectbox"] label p { color: #cbd5e1 !important; }
+    /* --- FIX SELECTBOX DARK MODE --- */
+    div[data-testid="stSelectbox"] label p { color: #cbd5e1 !important; font-weight: 600; }
+    div[data-testid="stSelectbox"] [data-baseweb="select"] * { color: #f8fafc !important; }
 """
 
 _light_css = """    /* ═══ LIGHT MODE ═══ */
@@ -723,7 +722,31 @@ _light_css = """    /* ═══ LIGHT MODE ═══ */
     .map-legend { position: absolute; bottom: 30px; right: 30px; z-index: 1000; background: rgba(10,14,26,0.92); padding: 12px 16px; border-radius: 10px; border: 1px solid rgba(59,130,246,0.25); font-size: 13px; color: #e2e8f0; }
     .main-title { text-align: center; font-size: 1.9rem; font-weight: 800; background: linear-gradient(135deg, #f1f5f9 0%, #93c5fd 50%, #818cf8 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; margin-bottom: 2px; line-height: 1.2; }
     .main-subtitle { text-align: center; font-size: 0.88rem; color: #64748b !important; margin-top: 0; letter-spacing: 0.5px; margin-bottom: 10px; }
-    .header-divider { height: 1px; background: linear-gradient(90deg, transparent, rgba(59,130,246,0.4), rgba(99,102,241,0.4), transparent); margin: 6px 0 16px 0; border: none; }"""
+    .header-divider { height: 1px; background: linear-gradient(90deg, transparent, rgba(59,130,246,0.4), rgba(99,102,241,0.4), transparent); margin: 6px 0 16px 0; border: none; }
+
+    /* --- FIX LIGHT MODE COLORS --- */
+    .tactical-brief { background: #f8fafc !important; border-left: 4px solid #e11d48 !important; color: #0f172a !important; }
+    .tactical-brief p, .tactical-brief div, .tactical-brief span { color: #0f172a !important; }
+    .tactical-brief b, .tactical-brief strong { color: #1d4ed8 !important; }
+    .tactical-brief u { color: #b45309 !important; text-decoration: none; font-weight: 600; }
+    
+    div[data-testid="stSelectbox"] label p { color: #1e293b !important; font-weight: 600; }
+    div[data-testid="stSelectbox"] [data-baseweb="select"] * { color: #0f172a !important; }
+    
+    .card-apex { background: linear-gradient(135deg, #ffe4e6 0%, #fecdd3 50%, #fecaca 100%) !important; box-shadow: 0 4px 15px rgba(225,29,72,0.15) !important; border: 1px solid rgba(225,29,72,0.2) !important; }
+    .card-clone { background: linear-gradient(135deg, #ffedd5 0%, #fed7aa 50%, #fdba74 100%) !important; box-shadow: 0 4px 15px rgba(234,88,12,0.15) !important; border: 1px solid rgba(234,88,12,0.2) !important; }
+    .card-car { background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 50%, #93c5fd 100%) !important; box-shadow: 0 4px 15px rgba(37,99,235,0.15) !important; border: 1px solid rgba(37,99,235,0.2) !important; }
+    .card-anomaly { background: linear-gradient(135deg, #f3e8ff 0%, #e9d5ff 50%, #d8b4fe 100%) !important; box-shadow: 0 4px 15px rgba(147,51,234,0.15) !important; border: 1px solid rgba(147,51,234,0.2) !important; }
+    .card-watch { background: linear-gradient(135deg, #fef9c3 0%, #fef08a 50%, #fde047 100%) !important; box-shadow: 0 4px 15px rgba(202,138,4,0.15) !important; border: 1px solid rgba(202,138,4,0.2) !important; }
+    
+    .card-apex .metric-value, .card-apex .metric-label,
+    .card-clone .metric-value, .card-clone .metric-label,
+    .card-car .metric-value, .card-car .metric-label,
+    .card-anomaly .metric-value, .card-anomaly .metric-label,
+    .card-watch .metric-value, .card-watch .metric-label {
+        color: #0f172a !important; text-shadow: none !important;
+    }
+"""
 
 _active_css = _dark_css if st.session_state.get('theme', 'dark') == 'dark' else _light_css
 
