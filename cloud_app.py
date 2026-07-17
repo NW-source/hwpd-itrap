@@ -91,7 +91,7 @@ def get_plate_display(row: dict) -> str:
     return '—'
 
 # ══ Case Dossier (Cloud Version — ใช้ข้อมูลจาก priority_df) ══════════════════
-def render_case_dossier_cloud(selected_target: str, priority_df: pd.DataFrame):
+def render_case_dossier_cloud(selected_target: str, priority_df: pd.DataFrame, tab_key: str = ""):
     """แสดงแฟ้มคดี จาก priority_df (ไม่ต้องใช้ active_db)"""
     rows = priority_df[priority_df['Target_ID'] == selected_target]
     if rows.empty:
@@ -155,7 +155,7 @@ def render_case_dossier_cloud(selected_target: str, priority_df: pd.DataFrame):
                 title=dict(text="📊 แผนภูมิวิเคราะห์รูปแบบพฤติกรรม (Risk Radar)", font=dict(size=14)),
                 paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
             st.plotly_chart(fig_radar, use_container_width=True,
-                            key=f"radar_{selected_target}")
+                            key=f"radar_{selected_target}_{tab_key}")
         else:
             st.info("ไม่มีข้อมูล Radar Chart")
 
@@ -206,7 +206,7 @@ def render_case_dossier_cloud(selected_target: str, priority_df: pd.DataFrame):
     )
 
 # ══ Clickable Table (เหมือน app.py) ══════════════════════════════════════════
-def show_clickable_table_cloud(df_display: pd.DataFrame, table_key: str, priority_df: pd.DataFrame):
+def show_clickable_table_cloud(df_display: pd.DataFrame, table_key: str, priority_df: pd.DataFrame, tab_key: str = ""):
     if df_display.empty:
         st.info("🟢 ไม่พบเป้าหมายที่อยู่ในเกณฑ์เฝ้าระวัง")
         return
@@ -235,7 +235,7 @@ def show_clickable_table_cloud(df_display: pd.DataFrame, table_key: str, priorit
     if len(event.selection.rows) > 0:
         selected_idx = event.selection.rows[0]
         target_id    = df_display.iloc[selected_idx]['Target_ID']
-        render_case_dossier_cloud(target_id, priority_df)
+        render_case_dossier_cloud(target_id, priority_df, tab_key=table_key)
 
 # ══ Sidebar ════════════════════════════════════════════════════════════════════
 st.sidebar.markdown("""
