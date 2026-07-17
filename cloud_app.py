@@ -590,17 +590,21 @@ _dark_css = """    /* ═══ DARK MODE ═══ */
     .main-title { text-align: center; font-size: 1.9rem; font-weight: 800; background: linear-gradient(135deg, #f1f5f9 0%, #93c5fd 50%, #818cf8 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; margin-bottom: 2px; line-height: 1.2; }
     .main-subtitle { text-align: center; font-size: 0.88rem; color: #64748b !important; margin-top: 0; letter-spacing: 0.5px; margin-bottom: 10px; }
     .header-divider { height: 1px; background: linear-gradient(90deg, transparent, rgba(59,130,246,0.4), rgba(99,102,241,0.4), transparent); margin: 6px 0 16px 0; border: none; }
-/* ── Selectbox dropdown popup (Dark Mode) ── */
-    [data-testid="stSelectbox"] label p { color: #e2e8f0 !important; font-weight: 600; }
-    [data-testid="stSelectbox"] .st-ag { color: #cbd5e1 !important; }
-    [data-testid="stSelectbox"] [data-baseweb="select"] > div { background: rgba(15,23,42,0.8) !important; border: 1px solid rgba(59,130,246,0.3) !important; color: #f8fafc !important; }
-    [data-testid="stSelectbox"] [data-baseweb="select"] span { color: #f8fafc !important; }
+    /* ── Selectbox dropdown popup (Dark Mode) ── */
     [role="listbox"] { background: #0d1321 !important; border: 1px solid rgba(59,130,246,0.3) !important; border-radius: 10px !important; box-shadow: 0 8px 32px rgba(0,0,0,0.5) !important; }
     [role="option"] { color: #cbd5e1 !important; background: #0d1321 !important; }
-    [role="option"]:hover { background: #1e293b !important; color: #f8fafc !important; }
-    [aria-selected="true"][role="option"] { background: #2563eb !important; color: #ffffff !important; font-weight: 600 !important; }
+    [role="option"]:hover { background: #ffffff !important; color: #0f172a !important; }
+    [aria-selected="true"][role="option"] { background: #ffffff !important; color: #0f172a !important; font-weight: 600 !important; }
     li[data-baseweb="list-item"] { color: #cbd5e1 !important; background: #0d1321 !important; }
-    [data-baseweb="popover"] { background: #0d1321 !important; border: 1px solid rgba(59,130,246,0.25) !important; border-radius: 10px !important; }"""
+    [data-baseweb="popover"] { background: #0d1321 !important; border: 1px solid rgba(59,130,246,0.25) !important; border-radius: 10px !important; }
+    /* Selectbox selected value text */
+    [data-testid="stSelectbox"] [data-baseweb="select"] > div { background: rgba(15,23,42,0.8) !important; border: 1px solid rgba(59,130,246,0.25) !important; }
+    [data-testid="stSelectbox"] span { color: #cbd5e1 !important; }
+    /* --- SAFELY APPENDED FIXES FOR DARK MODE --- */
+    /* Fix date selectbox text visibility */
+    [data-testid="stSelectbox"] [data-baseweb="select"] span { color: #f8fafc !important; }
+    [data-testid="stSelectbox"] label p { color: #cbd5e1 !important; }
+"""
 
 _light_css = """    /* ═══ LIGHT MODE ═══ */
     @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700;800&display=swap');
@@ -682,7 +686,23 @@ _light_css = """    /* ═══ LIGHT MODE ═══ */
     .metric-card { padding: 20px 16px; border-radius: 14px; text-align: center; margin-bottom: 16px; border: 1px solid rgba(255,255,255,0.07); position: relative; overflow: hidden; backdrop-filter: blur(12px); transition: transform 0.2s ease, box-shadow 0.2s ease; }
     .metric-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; border-radius: 14px 14px 0 0; }
     .metric-card:hover { transform: translateY(-3px); }
-
+    .card-apex { background: linear-gradient(145deg, rgba(159,18,57,0.18), rgba(30,10,25,0.65)); box-shadow: 0 4px 24px rgba(159,18,57,0.15); }
+    .card-apex::before { background: linear-gradient(90deg, #9f1239, #e11d48); }
+    .card-apex .metric-value { color: #fda4af; } .card-apex .metric-label { color: #fecdd3; }
+    .card-clone { background: linear-gradient(145deg, rgba(234,88,12,0.16), rgba(30,15,5,0.65)); box-shadow: 0 4px 24px rgba(234,88,12,0.12); }
+    .card-clone::before { background: linear-gradient(90deg, #ea580c, #f97316); }
+    .card-clone .metric-value { color: #fdba74; } .card-clone .metric-label { color: #fed7aa; }
+    .card-car { background: linear-gradient(145deg, rgba(59,130,246,0.16), rgba(5,15,40,0.65)); box-shadow: 0 4px 24px rgba(59,130,246,0.12); }
+    .card-car::before { background: linear-gradient(90deg, #2563eb, #3b82f6); }
+    .card-car .metric-value { color: #93c5fd; } .card-car .metric-label { color: #bfdbfe; }
+    .card-anomaly { background: linear-gradient(145deg, rgba(99,102,241,0.16), rgba(10,5,40,0.65)); box-shadow: 0 4px 24px rgba(99,102,241,0.12); }
+    .card-anomaly::before { background: linear-gradient(90deg, #6366f1, #8b5cf6); }
+    .card-anomaly .metric-value { color: #a5b4fc; } .card-anomaly .metric-label { color: #c7d2fe; }
+    .card-watch { background: linear-gradient(145deg, rgba(234,179,8,0.16), rgba(30,20,5,0.65)); box-shadow: 0 4px 24px rgba(234,179,8,0.12); }
+    .card-watch::before { background: linear-gradient(90deg, #ca8a04, #eab308); }
+    .card-watch .metric-value { color: #fde047; } .card-watch .metric-label { color: #fef08a; }
+    .metric-value { font-size: 44px; font-weight: 800; margin: 8px 0 4px; line-height: 1; letter-spacing: -2px; }
+    .metric-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; opacity: 0.9; }
     .apex-threat-banner { background: linear-gradient(135deg, #4c0519 0%, #881337 50%, #4c0519 100%); color: #fecdd3; padding: 16px 20px; border-radius: 12px; font-size: 16px; font-weight: 700; margin-bottom: 20px; text-align: center; border: 1px solid rgba(251,113,133,0.3); animation: pulse-border 2s infinite; position: relative; overflow: hidden; }
     .apex-threat-banner::before { content: ''; position: absolute; top: 0; left: -100%; width: 60%; height: 100%; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.05), transparent); animation: shimmer 3s infinite; }
     .risk-orange { background: linear-gradient(135deg, rgba(154,52,18,0.15), rgba(30,15,5,0.4)); border-left: 4px solid #f97316; padding: 12px 16px; border-radius: 8px; color: #fdba74; font-weight: 600; font-size: 14px; margin-bottom: 16px; }
@@ -703,34 +723,7 @@ _light_css = """    /* ═══ LIGHT MODE ═══ */
     .map-legend { position: absolute; bottom: 30px; right: 30px; z-index: 1000; background: rgba(10,14,26,0.92); padding: 12px 16px; border-radius: 10px; border: 1px solid rgba(59,130,246,0.25); font-size: 13px; color: #e2e8f0; }
     .main-title { text-align: center; font-size: 1.9rem; font-weight: 800; background: linear-gradient(135deg, #f1f5f9 0%, #93c5fd 50%, #818cf8 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; margin-bottom: 2px; line-height: 1.2; }
     .main-subtitle { text-align: center; font-size: 0.88rem; color: #64748b !important; margin-top: 0; letter-spacing: 0.5px; margin-bottom: 10px; }
-    .header-divider { height: 1px; background: linear-gradient(90deg, transparent, rgba(59,130,246,0.4), rgba(99,102,241,0.4), transparent); margin: 6px 0 16px 0; border: none; }
-    .tactical-brief { background: #ffffff !important; border: 1px solid #e2e8f0; border-left: 4px solid #e11d48 !important; padding: 16px 20px; border-radius: 10px; color: #1e293b !important; font-size: 14px; margin-bottom: 20px; line-height: 1.8; box-shadow: 0 2px 10px rgba(0,0,0,0.02); }
-    .tactical-brief p, .tactical-brief div, .tactical-brief span { color: #1e293b !important; }
-    .tactical-brief b, .tactical-brief strong { color: #2563eb !important; }
-    .tactical-brief u { color: #d97706 !important; text-decoration: none; font-weight: 600; }
-
-    [data-testid="stSelectbox"] label p { color: #1e293b !important; font-weight: 600; }
-    [data-testid="stSelectbox"] [data-baseweb="select"] > div { background: #ffffff !important; border: 1px solid #cbd5e1 !important; color: #0f172a !important; }
-    [data-testid="stSelectbox"] [data-baseweb="select"] span { color: #0f172a !important; }
-
-    /* Pastel Aurora Cards for Light Mode */
-    .metric-card { position: relative; padding: 18px 20px; border-radius: 16px; display: flex; flex-direction: column; justify-content: center; align-items: center; min-height: 120px; overflow: hidden; }
-    .card-apex { background: linear-gradient(135deg, #ffe4e6 0%, #fecdd3 50%, #fecaca 100%); box-shadow: 0 4px 15px rgba(225,29,72,0.15); border: 1px solid rgba(225,29,72,0.1); }
-    .card-clone { background: linear-gradient(135deg, #ffedd5 0%, #fed7aa 50%, #fdba74 100%); box-shadow: 0 4px 15px rgba(234,88,12,0.15); border: 1px solid rgba(234,88,12,0.1); }
-    .card-car { background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 50%, #93c5fd 100%); box-shadow: 0 4px 15px rgba(37,99,235,0.15); border: 1px solid rgba(37,99,235,0.1); }
-    .card-anomaly { background: linear-gradient(135deg, #f3e8ff 0%, #e9d5ff 50%, #d8b4fe 100%); box-shadow: 0 4px 15px rgba(147,51,234,0.15); border: 1px solid rgba(147,51,234,0.1); }
-    .card-watch { background: linear-gradient(135deg, #fef9c3 0%, #fef08a 50%, #fde047 100%); box-shadow: 0 4px 15px rgba(202,138,4,0.15); border: 1px solid rgba(202,138,4,0.1); }
-    
-    .card-apex .metric-value, .card-apex .metric-label,
-    .card-clone .metric-value, .card-clone .metric-label,
-    .card-car .metric-value, .card-car .metric-label,
-    .card-anomaly .metric-value, .card-anomaly .metric-label,
-    .card-watch .metric-value, .card-watch .metric-label {
-        color: #0f172a !important; text-shadow: none !important;
-    }
-    .metric-value { font-size: 32px; font-weight: 800; line-height: 1.1; margin-top: 4px; }
-    .metric-label { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; opacity: 0.85; }
-    """
+    .header-divider { height: 1px; background: linear-gradient(90deg, transparent, rgba(59,130,246,0.4), rgba(99,102,241,0.4), transparent); margin: 6px 0 16px 0; border: none; }"""
 
 _active_css = _dark_css if st.session_state.get('theme', 'dark') == 'dark' else _light_css
 
