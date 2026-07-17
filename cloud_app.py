@@ -148,44 +148,90 @@ def render_priority_cards(df: pd.DataFrame, tab_key: str = "x"):
     else:
         show_n = n
 
-    st.markdown(f"<div style='color:#64748b;font-size:13px;margin-bottom:8px'>แสดง {show_n} / {n} รายการ</div>",
+    st.markdown(f"<div style='color:#64748b;font-size:13px;margin-bottom:8px'>แสดง {show_n} / {n} รายการ — <b style='color:#60a5fa'>คลิกที่รถเพื่อดูรายละเอียด ▼</b></div>",
                 unsafe_allow_html=True)
 
-    for _, row in df.head(show_n).iterrows():
+    for idx, (_, row) in enumerate(df.head(show_n).iterrows()):
         r      = row.to_dict()
         plate  = get_plate(r)
         typ    = str(r.get('ประเภท', r.get('engine_type', '')))
         score  = r.get('Risk Score', r.get('risk_score', r.get('คะแนนรวม', 0)))
-        behav  = str(r.get('พฤติกรรมต้องสงสัย', r.get('เหตุผลหลัก', r.get('เหตุผล', '—'))))[:160]
+        behav  = str(r.get('พฤติกรรมต้องสงสัย', r.get('เหตุผลหลัก', r.get('เหตุผล', '—'))))
         cam    = str(r.get('จุดตรวจพบล่าสุด', r.get('last_cam', '—')))
         t_last = str(r.get('เวลาโผล่ล่าสุด',  r.get('last_time', '—')))[:5]
         n_cams = r.get('ผ่านร่วมกัน (ด่าน)', r.get('กล้องที่พบ', '—'))
-
-        badge = get_type_badge(typ)
-        bar   = score_to_bar(score)
         score_disp = int(float(score)) if str(score).replace('.','').isdigit() else score
 
-        st.markdown(f"""
-        <div class="pri-card">
-          <div style="display:flex;justify-content:space-between;align-items:flex-start">
-            <div>
-              <span style="font-size:17px;font-weight:800;color:#e2e8f0">🚗 {plate}</span>
-              &nbsp;{badge}
-            </div>
-            <div style="text-align:right">
-              <span style="font-size:20px;font-weight:800;color:#f97316">{score_disp}</span>
-              <span style="font-size:11px;color:#64748b"> คะแนน</span>
-            </div>
-          </div>
-          {bar}
-          <div style="margin-top:8px;font-size:13px;color:#94a3b8;line-height:1.6">
-            📋 {behav}<br>
-            📍 <b style="color:#60a5fa">{cam}</b> &nbsp;|&nbsp;
-            🕐 {t_last} &nbsp;|&nbsp;
-            📷 {n_cams} ด่าน
-          </div>
-        </div>
-        """, unsafe_allow_html=True)
+        # Color border by type
+        border_color = '#ef4444' if 'ขบวน' in typ or 'เป้า' in typ else \
+                       '#f97316' if 'กลุ่ม' in typ else \
+                       '#eab308' if 'ซ้ำ'   in typ else '#3b82f6'
+
+        # Expander label = plate + badge + score (คลิกได้)
+        exp_label = f"🚗 {plate}  |  {typ or 'ไม่ระบุ'}  |  ⭐ {score_disp} คะแนน  |  📍 {cam}"
+
+        with st.expander(exp_label, expanded=False):
+            # ── ข้อมูลหลัก ─────────────────────────────────────
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                st.markdown("**🚗 ทะเบียน**")
+                # Cars_List
+                cars = r.get('Cars_List')
+                if isinstance(cars, list) and cars:
+                    for car in cars:
+                        st.markdown(f"- `{car}`")
+                elif isinstance(cars, str) and cars not in ('', '-', 'nan'):
+                    try:
+                        import json as _j
+                        cl = _j.loads(cars)
+                        for car in (cl if isinstance(cl, list) else [cl]):
+                            st.markdown(f"- `{car}`")
+                    except:
+                        st.markdown(f"- `{cars}`")
+                else:
+                    st.markdown(f"`{plate}`")
+
+            with c2:
+                st.markdown("**📊 ข้อมูลการตรวจพบ**")
+                st.markdown(f"- ประเภท: **{typ or '—'}**")
+                st.markdown(f"- คะแนนความเสี่ยง: **{score_disp}**")
+                st.markdown(f"- จำนวนด่านที่ผ่าน: **{n_cams}**")
+                st.markdown(f"- จุดตรวจล่าสุด: **{cam}**")
+                st.markdown(f"- เวลาล่าสุด: **{t_last} น.**")
+
+            with c3:
+                st.markdown("**📏 ข้อมูลเพิ่มเติม**")
+                dist  = r.get('Total_Dist', r.get('ระยะห่างเฉลี่ย', '—'))
+                speed = r.get('Speed_Warp', '—')
+                st.markdown(f"- ระยะทาง: **{dist}**")
+                st.markdown(f"- ความเร็ว: **{speed}**")
+                target_id = r.get('Target_ID', plate)
+                st.markdown(f"- Target ID: `{target_id}`")
+
+            # ── พฤติกรรมต้องสงสัย ──────────────────────────────
+            st.markdown("---")
+            st.markdown("**🔍 พฤติกรรมต้องสงสัย / เหตุผลการแจ้งเตือน**")
+            st.warning(behav if behav not in ('—','nan','') else "ไม่มีข้อมูลเพิ่มเติม")
+
+            # ── Radar Data (ถ้ามี) ─────────────────────────────
+            radar = r.get('Radar_Data')
+            if radar and str(radar) not in ('','nan','None'):
+                st.markdown("**📡 ข้อมูลเส้นทาง (Radar)**")
+                try:
+                    if isinstance(radar, str):
+                        import json as _j
+                        radar = _j.loads(radar)
+                    if isinstance(radar, list) and len(radar) > 0:
+                        radar_df = pd.DataFrame(radar)
+                        # แสดงเฉพาะคอลัมน์สำคัญ
+                        show_cols = [c for c in ['cam','time','speed','lat','lon','plate'] if c in radar_df.columns]
+                        if show_cols:
+                            st.dataframe(radar_df[show_cols].head(20), use_container_width=True, hide_index=True)
+                        else:
+                            st.dataframe(radar_df.head(20), use_container_width=True, hide_index=True)
+                except:
+                    st.code(str(radar)[:500])
+
 
 # ══ Main Content ═══════════════════════════════════════════════════════════════
 # Header
