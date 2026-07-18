@@ -199,26 +199,34 @@ def save_realtime_session(active_db_pd: pd.DataFrame, session_date: str):
     except: pass
 
 def load_realtime_session(session_date: str):
-    ensure_realtime_table()
+    if not is_supabase_configured():
+        return None
     try:
-        conn = sqlite3.connect(DB_PATH)
-        row = conn.execute(
-            "SELECT session_date, raw_data_json, upload_count, "
-            "first_record_time, last_record_time, updated_at "
-            "FROM realtime_session WHERE session_date=?", (session_date,)
-        ).fetchone()
-        conn.close()
-        if row and row[1]:
-            import io as _io
-            df = pd.read_json(_io.StringIO(row[1]))  # ← pandas 2.x compat
-            if 'Datetime' in df.columns:
-                df['Datetime'] = pd.to_datetime(df['Datetime'])
-            return {'df': df, 'upload_count': row[2],
-                    'first_time': row[3], 'last_time': row[4], 'updated_at': row[5]}
-        return None  # row not found
+        from supabase_sync import pull_parquet_from_cloud, get_supabase_client
+        
+        # 1. Pull metadata from cloud_realtime table (for upload count, etc)
+        client = get_supabase_client()
+        res = client.table('cloud_realtime').select('upload_count, first_record_time, last_record_time, updated_at').eq('session_date', session_date).execute()
+        meta = res.data[0] if res.data else {}
+
+        # 2. Pull the actual raw data from Cloud Storage Parquet
+        df_pl = pull_parquet_from_cloud(session_date)
+        if df_pl is None or df_pl.is_empty():
+            return None
+            
+        df = df_pl.to_pandas()
+        if 'Datetime' in df.columns:
+            df['Datetime'] = pd.to_datetime(df['Datetime'])
+            
+        return {
+            'df': df, 
+            'upload_count': meta.get('upload_count', 1),
+            'first_time': meta.get('first_record_time', str(df['Datetime'].min()) if not df.empty else '-'), 
+            'last_time': meta.get('last_record_time', str(df['Datetime'].max()) if not df.empty else '-'), 
+            'updated_at': meta.get('updated_at', '-')
+        }
     except Exception as _e:
         import traceback as _tb
-        # เก็บ error ไว้ใน session_state เพื่อ debug
         import streamlit as _st
         _st.session_state['_rt_load_error'] = f"{_e}\n{_tb.format_exc()}"
         return None
