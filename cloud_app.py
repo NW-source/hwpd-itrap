@@ -2767,14 +2767,8 @@ if mode == "⚙️ แอดมิน (Admin Portal)":
 elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboard)":
     
     st.sidebar.markdown("---")
-    st.sidebar.markdown("### 🧭 เมนูเจาะลึกสถานการณ์")
-    if st.sidebar.button("🏠 สรุปสถานการณ์ (Overview)", use_container_width=True): change_tab("🏠 สรุปสถานการณ์ (Overview)")
-    if st.sidebar.button("🚨 รถสวมทะเบียน", use_container_width=True): change_tab("🚨 รถสวมทะเบียน")
-    if st.sidebar.button("🚘 ขบวนรถลำเลียง", use_container_width=True): change_tab("🚘 ขบวนรถลำเลียง")
-    if st.sidebar.button("🔍 รถพฤติกรรมต้องสงสัย", use_container_width=True): change_tab("🔄 พฤติกรรมมุดชายแดน")
-    if st.sidebar.button("⭐ รถที่น่าสนใจ (Watch List)", use_container_width=True): change_tab("⭐ รถที่น่าสนใจ")
     
-    # Load dates from Supabase
+    # Load dates from Supabase FIRST
     available_dates = []
     if _CLOUD_ENABLED and is_supabase_configured():
         from supabase_sync import get_supabase_client
@@ -2806,9 +2800,19 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
             with c1:
                 s_date = st.selectbox("เลือกวันที่:", available_dates, index=idx, label_visibility="collapsed")
             with c2:
-                if st.form_submit_button("✅ ยืนยัน", use_container_width=True):
+                if st.form_submit_button("✅ ยืนยัน", type="primary", use_container_width=True):
                     st.session_state['confirmed_date'] = s_date
                     st.rerun()
+
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("### 🧭 เมนูเจาะลึกสถานการณ์")
+    if st.sidebar.button("🏠 สรุปสถานการณ์ (Overview)", use_container_width=True): change_tab("🏠 สรุปสถานการณ์ (Overview)")
+    if st.sidebar.button("🚨 รถสวมทะเบียน", use_container_width=True): change_tab("🚨 รถสวมทะเบียน")
+    if st.sidebar.button("🚘 ขบวนรถลำเลียง", use_container_width=True): change_tab("🚘 ขบวนรถลำเลียง")
+    if st.sidebar.button("🔍 รถพฤติกรรมต้องสงสัย", use_container_width=True): change_tab("🔄 พฤติกรรมมุดชายแดน")
+    if st.sidebar.button("⭐ รถที่น่าสนใจ (Watch List)", use_container_width=True): change_tab("⭐ รถที่น่าสนใจ")
+    
+    if available_dates:
 
         st.markdown("""
         <div class="ticker-wrap">
@@ -2828,7 +2832,7 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
                 with c1:
                     m_date = st.selectbox("เลือกวันที่รายงาน:", available_dates, index=idx, label_visibility="collapsed")
                 with c2:
-                    if st.form_submit_button("✅ ยืนยัน", use_container_width=True):
+                    if st.form_submit_button("✅ ยืนยัน", type="primary", use_container_width=True):
                         st.session_state['confirmed_date'] = m_date
                         st.rerun()
                     
