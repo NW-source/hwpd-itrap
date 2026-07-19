@@ -533,12 +533,16 @@ _dark_css = """    /* ═══ DARK MODE ═══ */
     section[data-testid="stSidebar"] .stButton > button:hover { background: rgba(59,130,246,0.25) !important; border-color: rgba(59,130,246,0.5) !important; color: #dbeafe !important; }
     /* Radio */
     section[data-testid="stSidebar"] .stRadio label { color: #cbd5e1 !important; }
-    /* Tabs */
+    /* Tabs Base */
     .stTabs [data-baseweb="tab-list"] { background: rgba(15,23,42,0.8) !important; border-radius: 12px !important; padding: 6px !important; border: 1px solid rgba(59,130,246,0.3) !important; gap: 8px !important; }
-    .stTabs [data-baseweb="tab"] { background: transparent !important; border-radius: 8px !important; color: #94a3b8 !important; font-size: 18px !important; font-weight: 600 !important; padding: 12px 24px !important; }
-    .stTabs [data-baseweb="tab"]:hover { color: #ffffff !important; background: rgba(59,130,246,0.2) !important; }
-    .stTabs [aria-selected="true"] { background: linear-gradient(135deg, rgba(30, 58, 138, 0.9), rgba(30, 64, 175, 1.0)) !important; color: #ffffff !important; border: 1px solid rgba(96, 165, 250, 0.6) !important; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3) !important; }
-    .stTabs [aria-selected="true"] { background: linear-gradient(135deg, rgba(59,130,246,0.25), rgba(99,102,241,0.25)) !important; color: #93c5fd !important; font-weight: 700 !important; border: 1px solid rgba(59,130,246,0.3) !important; }
+    .stTabs [data-baseweb="tab"] { background: transparent !important; border-radius: 8px !important; padding: 12px 24px !important; margin: 0 !important; }
+    .stTabs [data-baseweb="tab"] p { color: #94a3b8 !important; font-size: 18px !important; font-weight: 600 !important; }
+    /* Hover */
+    .stTabs [data-baseweb="tab"]:hover { background: rgba(59,130,246,0.2) !important; }
+    .stTabs [data-baseweb="tab"]:hover p { color: #ffffff !important; }
+    /* Active */
+    .stTabs [aria-selected="true"] { background: linear-gradient(135deg, rgba(30, 58, 138, 0.9), rgba(30, 64, 175, 1.0)) !important; border: 1px solid rgba(96, 165, 250, 0.6) !important; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3) !important; }
+    .stTabs [aria-selected="true"] p { color: #ffffff !important; font-weight: 700 !important; }
     /* Text */
     h1, h2, h3 { color: #e2e8f0 !important; font-weight: 700 !important; }
     h4 { color: #94a3b8 !important; font-weight: 600 !important; }
