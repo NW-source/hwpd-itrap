@@ -2800,7 +2800,7 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
             with c1:
                 s_date = st.selectbox("เลือกวันที่:", available_dates, index=idx, label_visibility="collapsed")
             with c2:
-                if st.form_submit_button("✅ ยืนยัน", type="primary", use_container_width=True):
+                if st.form_submit_button("✅ ยืนยัน", use_container_width=True):
                     st.session_state['confirmed_date'] = s_date
                     st.rerun()
 
@@ -2832,7 +2832,7 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
                 with c1:
                     m_date = st.selectbox("เลือกวันที่รายงาน:", available_dates, index=idx, label_visibility="collapsed")
                 with c2:
-                    if st.form_submit_button("✅ ยืนยัน", type="primary", use_container_width=True):
+                    if st.form_submit_button("✅ ยืนยัน", use_container_width=True):
                         st.session_state['confirmed_date'] = m_date
                         st.rerun()
                     
