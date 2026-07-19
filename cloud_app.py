@@ -1760,7 +1760,13 @@ def repeat_offender_analysis(reports_df, reference_date, window_days=30, min_day
     records = []
     for report_date, priority_data in rows:
         try:
-            pdf = pd.DataFrame(json.loads(priority_data))
+            if isinstance(priority_data, str):
+                import json
+                p_data = json.loads(priority_data)
+            else:
+                p_data = priority_data
+                
+            pdf = pd.DataFrame(p_data)
             if pdf.empty: continue
             for _, row in pdf.iterrows():
                 score_val = row.get('Risk Score', 0)
@@ -2996,7 +3002,10 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
                     c_apex, c_clone, c_car, c_other = 0, 0, 0, 0
                     for p_data in reports_full_df[mask]['priority_data']:
                         try:
-                            pdf = pd.DataFrame(json.loads(p_data))
+                            if isinstance(p_data, str):
+                                import json
+                                p_data = json.loads(p_data)
+                            pdf = pd.DataFrame(p_data)
                             if not pdf.empty:
                                 fdf = pdf[pdf['Risk Score'].astype(str).str.replace('%', '').astype(float) >= 80]
                                 c_apex += len(fdf[fdf['ประเภท'] == "กลุ่มเป้าหมายความมั่นคงระดับสูงสุด"])
