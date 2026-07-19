@@ -511,16 +511,25 @@ if 'theme' not in st.session_state:
     st.session_state['theme'] = 'dark'
 
 _dark_css = """    /* ═══ DARK MODE ═══ */
+    /* --- Form Submit Button Fix --- */
+    [data-testid="stFormSubmitButton"] > button {
+        background: linear-gradient(135deg, rgba(16, 185, 129, 0.9), rgba(5, 150, 105, 1.0)) !important;
+        border: none !important;
+        color: #ffffff !important;
+        border-radius: 8px !important;
+        font-weight: 700 !important;
+        font-size: 14px !important;
+        transition: all 0.2s ease !important;
+        box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3) !important;
+    }
+    [data-testid="stFormSubmitButton"] > button:hover {
+        background: linear-gradient(135deg, rgba(16, 185, 129, 1.0), rgba(4, 120, 87, 1.0)) !important;
+        box-shadow: 0 6px 16px rgba(16, 185, 129, 0.5) !important;
+        transform: translateY(-2px);
+    }
 
-    /* --- Date Selector Fix --- */
-    div[data-testid="stForm"] div[data-baseweb="select"] > div {
-        background-color: #ffffff !important;
-        color: #000000 !important;
-        border: 1px solid #e2e8f0 !important;
-    }
-    div[data-testid="stForm"] div[data-baseweb="select"] * {
-        color: #000000 !important;
-    }
+
+
     @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700;800&display=swap');
     html, body { font-family: 'Sarabun', 'TH Sarabun PSK', 'TH Sarabun New', sans-serif !important; font-size: 16px !important; background: #0a0e1a !important; }
     .stApp { background: linear-gradient(135deg, #0a0e1a 0%, #0d1321 50%, #0a1628 100%) !important; min-height: 100vh; }
@@ -550,7 +559,10 @@ _dark_css = """    /* ═══ DARK MODE ═══ */
     p, div, span { color: #cbd5e1; }
     hr { border-color: rgba(59,130,246,0.1) !important; margin: 20px 0 !important; }
     /* Inputs */
-    [data-testid="stSelectbox"] > div > div { background: rgba(15,23,42,0.8) !important; border: 1px solid rgba(59,130,246,0.2) !important; border-radius: 8px !important; color: #e2e8f0 !important; }
+    [data-testid="stSelectbox"] > div > div { background: #ffffff !important; border: 1px solid #94a3b8 !important; border-radius: 8px !important; color: #0f172a !important; }
+    [data-testid="stSelectbox"] div[data-baseweb="select"] * { color: #0f172a !important; }
+    [data-testid="stSelectbox"] ul[role="listbox"] { background: #ffffff !important; color: #0f172a !important; }
+    [data-testid="stSelectbox"] ul[role="listbox"] li { color: #0f172a !important; }
     .stTextInput input { background: rgba(15,23,42,0.8) !important; border: 1px solid rgba(59,130,246,0.2) !important; border-radius: 8px !important; color: #e2e8f0 !important; }
     .stButton > button { background: linear-gradient(135deg, rgba(29,78,216,0.3), rgba(99,102,241,0.3)) !important; border: 1px solid rgba(59,130,246,0.3) !important; color: #93c5fd !important; border-radius: 8px !important; font-weight: 600 !important; font-size: 13px !important; transition: all 0.2s ease !important; }
     .stButton > button:hover { background: linear-gradient(135deg, rgba(29,78,216,0.5), rgba(99,102,241,0.5)) !important; color: #dbeafe !important; box-shadow: 0 4px 16px rgba(59,130,246,0.2) !important; transform: translateY(-1px); }
