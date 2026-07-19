@@ -2831,7 +2831,7 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
         # --- Sidebar Date Selector Form ---
         with st.sidebar.form("sidebar_date_form", border=False):
             st.markdown("<div style='font-size:14px; font-weight:600; color:#fbbf24; margin-bottom:8px;'>📅 ตัวกรองข้อมูลรายวัน</div>", unsafe_allow_html=True)
-            c1, c2 = st.columns([7, 3])
+            c1, c2 = st.columns([6, 4])
             with c1:
                 s_date = st.selectbox("เลือกวันที่:", available_dates, index=idx, label_visibility="collapsed")
             with c2:
@@ -2863,7 +2863,7 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
         with col_t2:
             with st.form("main_date_form", border=False):
                 st.markdown("<div style='font-size:14px; font-weight:600; color:#e2e8f0; margin-bottom:8px;'>📅 เลือกวันที่รายงาน:</div>", unsafe_allow_html=True)
-                c1, c2 = st.columns([7, 3])
+                c1, c2 = st.columns([6, 4])
                 with c1:
                     m_date = st.selectbox("เลือกวันที่รายงาน:", available_dates, index=idx, label_visibility="collapsed")
                 with c2:
