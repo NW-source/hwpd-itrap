@@ -511,6 +511,16 @@ if 'theme' not in st.session_state:
     st.session_state['theme'] = 'dark'
 
 _dark_css = """    /* ═══ DARK MODE ═══ */
+
+    /* --- Date Selector Fix --- */
+    div[data-testid="stForm"] div[data-baseweb="select"] > div {
+        background-color: #ffffff !important;
+        color: #000000 !important;
+        border: 1px solid #e2e8f0 !important;
+    }
+    div[data-testid="stForm"] div[data-baseweb="select"] * {
+        color: #000000 !important;
+    }
     @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700;800&display=swap');
     html, body { font-family: 'Sarabun', 'TH Sarabun PSK', 'TH Sarabun New', sans-serif !important; font-size: 16px !important; background: #0a0e1a !important; }
     .stApp { background: linear-gradient(135deg, #0a0e1a 0%, #0d1321 50%, #0a1628 100%) !important; min-height: 100vh; }
@@ -2767,9 +2777,28 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
                 available_dates = [r['report_date'] for r in res.data]
         except: pass
         
+    if 'confirmed_date' not in st.session_state:
+        st.session_state['confirmed_date'] = datetime.now().strftime('%Y-%m-%d')
+        
     if not available_dates:
         st.info("📭 ยังไม่มีรายงานในระบบ Cloud กรุณาให้ Admin ทำการอัปโหลดข้อมูลจากศูนย์ก่อนครับ")
+        selected_date = st.session_state['confirmed_date']
     else:
+        # Determine index for selectbox
+        idx = 0
+        if st.session_state['confirmed_date'] in available_dates:
+            idx = available_dates.index(st.session_state['confirmed_date'])
+        elif available_dates:
+            st.session_state['confirmed_date'] = available_dates[0]
+
+        # --- Sidebar Date Selector Form ---
+        with st.sidebar.form("sidebar_date_form", border=False):
+            st.markdown("<div style='font-size:14px; font-weight:600; color:#fbbf24; margin-bottom:8px;'>📅 ตัวกรองข้อมูลรายวัน</div>", unsafe_allow_html=True)
+            s_date = st.selectbox("เลือกวันที่:", available_dates, index=idx, label_visibility="collapsed")
+            if st.form_submit_button("✅ ยืนยัน", use_container_width=True):
+                st.session_state['confirmed_date'] = s_date
+                st.rerun()
+
         st.markdown("""
         <div class="ticker-wrap">
             <div class="ticker-content">
@@ -2779,8 +2808,16 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
         """, unsafe_allow_html=True)
         
         col_t1, col_t2 = st.columns([8, 2])
+        
+        # --- Main Date Selector Form ---
         with col_t2:
-            selected_date = st.selectbox("📅 เลือกวันที่รายงาน:", available_dates)
+            with st.form("main_date_form", border=False):
+                m_date = st.selectbox("📅 เลือกวันที่รายงาน:", available_dates, index=idx)
+                if st.form_submit_button("✅ ยืนยัน", use_container_width=True):
+                    st.session_state['confirmed_date'] = m_date
+                    st.rerun()
+                    
+        selected_date = st.session_state['confirmed_date']
         with col_t1:
             st.markdown(f"<div style='padding: 10px; background-color: #f8fafc; border-left: 5px solid #10b981; border-radius: 5px; color: #0f172a;'><span class='live-dot'></span><b>Cloud Sync: Active</b> | กำลังแสดงผลรายงานข่าวกรองประจำวันที่: <b>{selected_date}</b></div>", unsafe_allow_html=True)
             
@@ -2942,9 +2979,9 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
                     st.markdown("---")
 
                 reports_full_df['date'] = pd.to_datetime(reports_full_df['report_date'])
-                sel_d = pd.to_datetime(selected_date)
-                mask_7 = (reports_full_df['date'] <= sel_d) & (reports_full_df['date'] > sel_d - timedelta(days=7))
-                mask_30 = (reports_full_df['date'] <= sel_d) & (reports_full_df['date'] > sel_d - timedelta(days=30))
+                _today_d = pd.to_datetime(datetime.now().strftime('%Y-%m-%d'))
+                mask_7 = (reports_full_df['date'] <= _today_d) & (reports_full_df['date'] > _today_d - timedelta(days=7))
+                mask_30 = (reports_full_df['date'] <= _today_d) & (reports_full_df['date'] > _today_d - timedelta(days=30))
                 
                 def calc_cum(mask):
                     c_apex, c_clone, c_car, c_other = 0, 0, 0, 0
