@@ -1749,19 +1749,24 @@ def color_score(val):
 # ─────────────────────────────────────────────────────────────────────────
 # 🔁 Repeat Offender Intelligence
 # ─────────────────────────────────────────────────────────────────────────
-def repeat_offender_analysis(db_path, reference_date, window_days=30, min_days=3):
-    """ค้นหาทะเบียนที่ trigger detection ≥ min_days ในช่วง window_days"""
+def repeat_offender_analysis(reports_df, reference_date, window_days=30, min_days=3):
+    """ค้นหาทะเบียนที่ trigger detection ≥ min_days ในช่วง window_days จาก Supabase DataFrame"""
     try:
-        conn = sqlite3.connect(db_path)
+        if reports_df is None or reports_df.empty:
+            return pd.DataFrame()
+        
         ref_dt   = pd.to_datetime(reference_date)
-        start_dt = (ref_dt - timedelta(days=window_days)).strftime('%Y-%m-%d')
-        rows = conn.execute(
-            "SELECT report_date, priority_data FROM daily_reports "
-            "WHERE report_date >= ? AND report_date <= ? ORDER BY report_date",
-            (start_dt, reference_date)
-        ).fetchall()
-        conn.close()
-    except:
+        start_dt = ref_dt - timedelta(days=window_days)
+        
+        reports_df['date'] = pd.to_datetime(reports_df['report_date'])
+        mask = (reports_df['date'] >= start_dt) & (reports_df['date'] <= ref_dt)
+        df_filtered = reports_df[mask]
+        
+        if df_filtered.empty:
+            return pd.DataFrame()
+            
+        rows = [(row['report_date'], row['priority_data']) for _, row in df_filtered.iterrows()]
+    except Exception as e:
         return pd.DataFrame()
 
     if not rows:
@@ -3113,7 +3118,7 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
                     if _sel_str != _today_str:
                         st.empty()
                     else:
-                        _rep = repeat_offender_analysis(DB_PATH, selected_date, window_days=30, min_days=2)
+                        _rep = repeat_offender_analysis(reports_full_df, selected_date, window_days=30, min_days=2)
 
                         if _rep.empty:
                             st.info("⚠️ ยังไม่พบทะเบียนที่ปรากฏซ้ำ ≥ 2 วัน ในช่วง 30 วันที่ผ่านมา — ต้องมีข้อมูลอย่างน้อย 2 วันในระบบ")
