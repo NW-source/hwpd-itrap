@@ -560,9 +560,9 @@ _dark_css = """    /* ═══ DARK MODE ═══ */
     hr { border-color: rgba(59,130,246,0.1) !important; margin: 20px 0 !important; }
     /* Inputs */
     [data-testid="stSelectbox"] > div > div { background: #ffffff !important; border: 1px solid #94a3b8 !important; border-radius: 8px !important; color: #0f172a !important; }
-    [data-testid="stSelectbox"] div[data-baseweb="select"] * { color: #0f172a !important; }
+    [data-testid="stSelectbox"] div[data-baseweb="select"] * { color: #0f172a !important; font-size: 16px !important; font-weight: 700 !important; }
     [data-testid="stSelectbox"] ul[role="listbox"] { background: #ffffff !important; color: #0f172a !important; }
-    [data-testid="stSelectbox"] ul[role="listbox"] li { color: #0f172a !important; }
+    [data-testid="stSelectbox"] ul[role="listbox"] li { color: #0f172a !important; font-size: 16px !important; font-weight: 600 !important; padding-top: 10px !important; padding-bottom: 10px !important; }
     .stTextInput input { background: rgba(15,23,42,0.8) !important; border: 1px solid rgba(59,130,246,0.2) !important; border-radius: 8px !important; color: #e2e8f0 !important; }
     .stButton > button { background: linear-gradient(135deg, rgba(29,78,216,0.3), rgba(99,102,241,0.3)) !important; border: 1px solid rgba(59,130,246,0.3) !important; color: #93c5fd !important; border-radius: 8px !important; font-weight: 600 !important; font-size: 13px !important; transition: all 0.2s ease !important; }
     .stButton > button:hover { background: linear-gradient(135deg, rgba(29,78,216,0.5), rgba(99,102,241,0.5)) !important; color: #dbeafe !important; box-shadow: 0 4px 16px rgba(59,130,246,0.2) !important; transform: translateY(-1px); }
@@ -3110,107 +3110,110 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
                         if st.button("🔍 เจาะลึก", key="btn_watch_d", use_container_width=True): change_tab("⭐ รถที่น่าสนใจ"); st.rerun()
                         
                 with tab_repeat:
-                    _rep = repeat_offender_analysis(DB_PATH, selected_date, window_days=30, min_days=2)
-
-                    if _rep.empty:
-                        st.info("⚠️ ยังไม่พบทะเบียนที่ปรากฏซ้ำ ≥ 2 วัน ในช่วง 30 วันที่ผ่านมา — ต้องมีข้อมูลอย่างน้อย 2 วันในระบบ")
+                    if _sel_str != _today_str:
+                        st.empty()
                     else:
-                        # ── Summary cards ──────────────────────────────────────
-                        _r_clone  = _rep[_rep['ประเภทหลัก'].str.contains("สวมทะเบียน", na=False)]
-                        _r_convoy = _rep[_rep['ประเภทหลัก'].str.contains("ขบวน", na=False)]
-                        _r_susp   = _rep[~_rep['ประเภทหลัก'].str.contains("สวมทะเบียน|ขบวน", na=False)]
+                        _rep = repeat_offender_analysis(DB_PATH, selected_date, window_days=30, min_days=2)
 
-                        rc1, rc2, rc3 = st.columns(3)
-                        with rc1: st.markdown(f"<div class='metric-card card-clone'><div class='metric-label'>🚗 สวมทะเบียนซ้ำ</div><div class='metric-value'>{len(_r_clone)}</div><div style='font-size:11px;color:#94a3b8'>≥2 วัน / 30 วัน</div></div>", unsafe_allow_html=True)
-                        with rc2: st.markdown(f"<div class='metric-card card-car'><div class='metric-label'>🏎️ ขบวนรถซ้ำ</div><div class='metric-value'>{len(_r_convoy)}</div><div style='font-size:11px;color:#94a3b8'>≥2 วัน / 30 วัน</div></div>", unsafe_allow_html=True)
-                        with rc3: st.markdown(f"<div class='metric-card card-anomaly'><div class='metric-label'>🔍 รถต้องสงสัยซ้ำ</div><div class='metric-value'>{len(_r_susp)}</div><div style='font-size:11px;color:#94a3b8'>≥2 วัน / 30 วัน</div></div>", unsafe_allow_html=True)
+                        if _rep.empty:
+                            st.info("⚠️ ยังไม่พบทะเบียนที่ปรากฏซ้ำ ≥ 2 วัน ในช่วง 30 วันที่ผ่านมา — ต้องมีข้อมูลอย่างน้อย 2 วันในระบบ")
+                        else:
+                            # ── Summary cards ──────────────────────────────────────
+                            _r_clone  = _rep[_rep['ประเภทหลัก'].str.contains("สวมทะเบียน", na=False)]
+                            _r_convoy = _rep[_rep['ประเภทหลัก'].str.contains("ขบวน", na=False)]
+                            _r_susp   = _rep[~_rep['ประเภทหลัก'].str.contains("สวมทะเบียน|ขบวน", na=False)]
 
-                        st.markdown("---")
-                        _hist_db = active_db_all if not active_db_all.empty else active_db
+                            rc1, rc2, rc3 = st.columns(3)
+                            with rc1: st.markdown(f"<div class='metric-card card-clone'><div class='metric-label'>🚗 สวมทะเบียนซ้ำ</div><div class='metric-value'>{len(_r_clone)}</div><div style='font-size:11px;color:#94a3b8'>≥2 วัน / 30 วัน</div></div>", unsafe_allow_html=True)
+                            with rc2: st.markdown(f"<div class='metric-card card-car'><div class='metric-label'>🏎️ ขบวนรถซ้ำ</div><div class='metric-value'>{len(_r_convoy)}</div><div style='font-size:11px;color:#94a3b8'>≥2 วัน / 30 วัน</div></div>", unsafe_allow_html=True)
+                            with rc3: st.markdown(f"<div class='metric-card card-anomaly'><div class='metric-label'>🔍 รถต้องสงสัยซ้ำ</div><div class='metric-value'>{len(_r_susp)}</div><div style='font-size:11px;color:#94a3b8'>≥2 วัน / 30 วัน</div></div>", unsafe_allow_html=True)
 
-                        # ── Helper: province extractor ──────────────────────────
-                        def _get_province(plate_str):
-                            parts = str(plate_str).strip().split()
-                            return parts[-1] if len(parts) >= 2 else '-'
+                            st.markdown("---")
+                            _hist_db = active_db_all if not active_db_all.empty else active_db
 
-                        def _day_badge(n):
-                            if n >= 10: return "🔴"
-                            elif n >= 5: return "🟠"
-                            elif n >= 3: return "🟡"
-                            return "🟢"
+                            # ── Helper: province extractor ──────────────────────────
+                            def _get_province(plate_str):
+                                parts = str(plate_str).strip().split()
+                                return parts[-1] if len(parts) >= 2 else '-'
 
-                        # ── Helper: show one group as table ────────────────────
-                        def _show_repeat_table(group_df, tab_key, icon):
-                            if group_df.empty:
-                                st.info("ไม่มีข้อมูลในกลุ่มนี้")
-                                return
+                            def _day_badge(n):
+                                if n >= 10: return "🔴"
+                                elif n >= 5: return "🟠"
+                                elif n >= 3: return "🟡"
+                                return "🟢"
 
-                            # โหลด status ทั้งหมดครั้งเดียว
-                            try:
-                                _sc = sqlite3.connect(DB_PATH)
-                                _st_df = pd.read_sql(
-                                    "SELECT plate, status FROM target_status", _sc)
-                                _sc.close()
-                                _st_map = dict(zip(_st_df['plate'], _st_df['status']))
-                            except:
-                                _st_map = {}
+                            # ── Helper: show one group as table ────────────────────
+                            def _show_repeat_table(group_df, tab_key, icon):
+                                if group_df.empty:
+                                    st.info("ไม่มีข้อมูลในกลุ่มนี้")
+                                    return
 
-                            # หากล้องล่าสุดจาก _hist_db
-                            def _last_cam(plate):
-                                if _hist_db.empty: return '-'
-                                sub = _hist_db[_hist_db['ทะเบียน_Full'] == plate]
-                                if sub.empty: return '-'
-                                return sub.sort_values('Datetime').iloc[-1]['จุดติดตั้งกล้อง']
+                                # โหลด status ทั้งหมดครั้งเดียว
+                                try:
+                                    _sc = sqlite3.connect(DB_PATH)
+                                    _st_df = pd.read_sql(
+                                        "SELECT plate, status FROM target_status", _sc)
+                                    _sc.close()
+                                    _st_map = dict(zip(_st_df['plate'], _st_df['status']))
+                                except:
+                                    _st_map = {}
 
-                            tbl = pd.DataFrame({
-                                'สถานะ': group_df['plate'].apply(
-                                    lambda p: _st_map.get(p, '🔴 เฝ้าระวังใหม่')),
-                                'ทะเบียน': group_df['plate'],
-                                'จำนวนวันที่พบ': group_df['วันที่พบ'].astype(int),
-                                'วันแรกที่พบ': group_df['ครั้งแรก'],
-                                'วันล่าสุดที่พบ': group_df['ล่าสุด'],
-                                'กล้องล่าสุด': group_df['plate'].apply(_last_cam),
-                                'Risk Score': group_df['คะแนนสูงสุด'].astype(int),
-                            })
+                                # หากล้องล่าสุดจาก _hist_db
+                                def _last_cam(plate):
+                                    if _hist_db.empty: return '-'
+                                    sub = _hist_db[_hist_db['ทะเบียน_Full'] == plate]
+                                    if sub.empty: return '-'
+                                    return sub.sort_values('Datetime').iloc[-1]['จุดติดตั้งกล้อง']
 
-                            st.caption("คลิกแถวเพื่อดูแผนที่และรายละเอียดด้านล่าง")
-                            event = st.dataframe(
-                                tbl, use_container_width=True, hide_index=True,
-                                on_select="rerun", selection_mode="single-row",
-                                key=f"rep_tbl_{tab_key}"
-                            )
-                            excel_download_button(
-                                tbl, f"repeat_{tab_key}_{selected_date}.xlsx",
-                                "📥 Export ตารางนี้ (Excel)"
-                            )
+                                tbl = pd.DataFrame({
+                                    'สถานะ': group_df['plate'].apply(
+                                        lambda p: _st_map.get(p, '🔴 เฝ้าระวังใหม่')),
+                                    'ทะเบียน': group_df['plate'],
+                                    'จำนวนวันที่พบ': group_df['วันที่พบ'].astype(int),
+                                    'วันแรกที่พบ': group_df['ครั้งแรก'],
+                                    'วันล่าสุดที่พบ': group_df['ล่าสุด'],
+                                    'กล้องล่าสุด': group_df['plate'].apply(_last_cam),
+                                    'Risk Score': group_df['คะแนนสูงสุด'].astype(int),
+                                })
 
-                            if event.selection.rows:
-                                idx   = event.selection.rows[0]
-                                rrow  = group_df.iloc[idx]
-                                freq  = rrow['วันที่พบ']
-                                score = rrow['คะแนนสูงสุด']
-                                st.markdown("---")
-                                st.markdown(
-                                    f"#### {icon} รายละเอียด: **{rrow['plate']}** "
-                                    f"| พบซ้ำ {freq} วัน | Score {score:.0f}"
+                                st.caption("คลิกแถวเพื่อดูแผนที่และรายละเอียดด้านล่าง")
+                                event = st.dataframe(
+                                    tbl, use_container_width=True, hide_index=True,
+                                    on_select="rerun", selection_mode="single-row",
+                                    key=f"rep_tbl_{tab_key}"
                                 )
-                                render_repeat_offender_dossier(
-                                    rrow['plate'], _hist_db, rrow['dates_list']
+                                excel_download_button(
+                                    tbl, f"repeat_{tab_key}_{selected_date}.xlsx",
+                                    "📥 Export ตารางนี้ (Excel)"
                                 )
 
+                                if event.selection.rows:
+                                    idx   = event.selection.rows[0]
+                                    rrow  = group_df.iloc[idx]
+                                    freq  = rrow['วันที่พบ']
+                                    score = rrow['คะแนนสูงสุด']
+                                    st.markdown("---")
+                                    st.markdown(
+                                        f"#### {icon} รายละเอียด: **{rrow['plate']}** "
+                                        f"| พบซ้ำ {freq} วัน | Score {score:.0f}"
+                                    )
+                                    render_repeat_offender_dossier(
+                                        rrow['plate'], _hist_db, rrow['dates_list']
+                                    )
 
-                        # ── 3 sub-tabs ──────────────────────────────────────────
-                        rt1, rt2, rt3 = st.tabs([
-                            f"🚗 สวมทะเบียนซ้ำ ({len(_r_clone)})",
-                            f"🏎️ ขบวนรถซ้ำ ({len(_r_convoy)})",
-                            f"🔍 ต้องสงสัยซ้ำ ({len(_r_susp)})",
-                        ])
-                        with rt1:
-                            _show_repeat_table(_r_clone.reset_index(drop=True),  "clone",  "🚗")
-                        with rt2:
-                            _show_repeat_table(_r_convoy.reset_index(drop=True), "convoy", "🏎️")
-                        with rt3:
-                            _show_repeat_table(_r_susp.reset_index(drop=True),   "susp",   "🔍")
+
+                            # ── 3 sub-tabs ──────────────────────────────────────────
+                            rt1, rt2, rt3 = st.tabs([
+                                f"🚗 สวมทะเบียนซ้ำ ({len(_r_clone)})",
+                                f"🏎️ ขบวนรถซ้ำ ({len(_r_convoy)})",
+                                f"🔍 ต้องสงสัยซ้ำ ({len(_r_susp)})",
+                            ])
+                            with rt1:
+                                _show_repeat_table(_r_clone.reset_index(drop=True),  "clone",  "🚗")
+                            with rt2:
+                                _show_repeat_table(_r_convoy.reset_index(drop=True), "convoy", "🏎️")
+                            with rt3:
+                                _show_repeat_table(_r_susp.reset_index(drop=True),   "susp",   "🔍")
 
 
 
