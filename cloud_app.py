@@ -3019,38 +3019,29 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
                 cum30_apex, cum30_clone, cum30_car, cum30_other = calc_cum(mask_30)
 
                 st.markdown("### 📊 ข้อมูลสรุปเป้าหมายสำคัญ (Intelligence Brief)")
-                tab_realtime, tab_daily, tab_repeat = st.tabs([
-                    "⚡ Realtime",
-                    "📅 ประจำวัน (Daily)",
-                    "🔁 รถวิ่งซ้ำ (30 วัน)",
-                ])
+                _today_str = datetime.now().strftime('%Y-%m-%d')
+                _sel_str   = str(selected_date)[:10]
 
-                
+                if _sel_str == _today_str:
+                    tab_realtime, tab_daily, tab_repeat = st.tabs([
+                        "⚡ Realtime",
+                        "📅 ประจำวัน (Daily)",
+                        "🔁 รถวิ่งซ้ำ (30 วัน)",
+                    ])
+                else:
+                    tab_daily, = st.tabs([
+                        "📅 ประจำวัน (Daily)",
+                    ])
+                    # Create dummy context managers
+                    from contextlib import nullcontext
+                    tab_realtime = nullcontext()
+                    tab_repeat = nullcontext()
+
                 with tab_realtime:
                     # ── ✅ Realtime = วันปัจจุบันเท่านั้น ─────────────────────
-                    _today_str = datetime.now().strftime('%Y-%m-%d')   # ← fix: from datetime import datetime
-
-                    _sel_str   = str(selected_date)[:10]  # YYYY-MM-DD
 
                     if _sel_str != _today_str:
-                        # ── วันที่เลือกเป็นวันก่อนหน้า → แสดงข้อความ ──────────
-                        st.markdown(f"""
-                        <div style='background:rgba(30,58,138,0.15);border-left:4px solid #3b82f6;
-                            padding:24px;border-radius:12px;margin:16px 0;'>
-                            <div style='font-size:32px;margin-bottom:12px;'>📅</div>
-                            <div style='font-size:18px;font-weight:700;color:#93c5fd;margin-bottom:8px;'>
-                                Realtime ใช้ได้เฉพาะวันปัจจุบันเท่านั้น
-                            </div>
-                            <div style='font-size:14px;color:#94a3b8;line-height:1.8;'>
-                                วันที่ <b style='color:#fbbf24;'>{_sel_str}</b> เป็นข้อมูลย้อนหลัง
-                                ไม่มีสตรีมสดสำหรับวันนั้นอีกต่อไป<br>
-                                กรุณาดูข้อมูลย้อนหลังได้ที่แท็บ
-                                <b style='color:#a5b4fc;'>📅 ประจำวัน (Daily)</b> แทน<br><br>
-                                🟢 หากต้องการดู Realtime — เลือกวันที่
-                                <b style='color:#34d399;'>{_today_str}</b> (วันนี้)
-                            </div>
-                        </div>
-                        """, unsafe_allow_html=True)
+                        pass
 
                     else:
                         # ── วันนี้ → โหลดจาก realtime_session table ───────────
