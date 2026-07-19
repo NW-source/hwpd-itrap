@@ -534,8 +534,10 @@ _dark_css = """    /* ═══ DARK MODE ═══ */
     /* Radio */
     section[data-testid="stSidebar"] .stRadio label { color: #cbd5e1 !important; }
     /* Tabs */
-    .stTabs [data-baseweb="tab-list"] { background: rgba(15,23,42,0.8) !important; border-radius: 12px !important; padding: 4px !important; border: 1px solid rgba(59,130,246,0.15) !important; gap: 4px !important; }
-    .stTabs [data-baseweb="tab"] { background: transparent !important; border-radius: 8px !important; color: #94a3b8 !important; font-size: 13px !important; font-weight: 500 !important; padding: 8px 16px !important; }
+    .stTabs [data-baseweb="tab-list"] { background: rgba(15,23,42,0.8) !important; border-radius: 12px !important; padding: 6px !important; border: 1px solid rgba(59,130,246,0.3) !important; gap: 8px !important; }
+    .stTabs [data-baseweb="tab"] { background: transparent !important; border-radius: 8px !important; color: #94a3b8 !important; font-size: 18px !important; font-weight: 600 !important; padding: 12px 24px !important; }
+    .stTabs [data-baseweb="tab"]:hover { color: #ffffff !important; background: rgba(59,130,246,0.2) !important; }
+    .stTabs [aria-selected="true"] { background: linear-gradient(135deg, rgba(30, 58, 138, 0.9), rgba(30, 64, 175, 1.0)) !important; color: #ffffff !important; border: 1px solid rgba(96, 165, 250, 0.6) !important; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3) !important; }
     .stTabs [aria-selected="true"] { background: linear-gradient(135deg, rgba(59,130,246,0.25), rgba(99,102,241,0.25)) !important; color: #93c5fd !important; font-weight: 700 !important; border: 1px solid rgba(59,130,246,0.3) !important; }
     /* Text */
     h1, h2, h3 { color: #e2e8f0 !important; font-weight: 700 !important; }
@@ -637,8 +639,10 @@ _light_css = """    /* ═══ LIGHT MODE ═══ */
     section[data-testid="stSidebar"] .stButton > button { background: #f1f5f9 !important; border: 1px solid #cbd5e1 !important; color: #334155 !important; border-radius: 8px !important; font-size: 13px !important; font-weight: 600 !important; width: 100% !important; transition: all 0.2s ease !important; }
     section[data-testid="stSidebar"] .stButton > button:hover { background: #e0e7ff !important; border-color: #6366f1 !important; color: #312e81 !important; }
     section[data-testid="stSidebar"] .stRadio label { color: #475569 !important; }
-    .stTabs [data-baseweb="tab-list"] { background: #f1f5f9 !important; border-radius: 12px !important; padding: 4px !important; border: 1px solid #e2e8f0 !important; gap: 4px !important; }
-    .stTabs [data-baseweb="tab"] { background: transparent !important; border-radius: 8px !important; color: #64748b !important; font-size: 13px !important; font-weight: 500 !important; padding: 8px 16px !important; }
+    .stTabs [data-baseweb="tab-list"] { background: #f1f5f9 !important; border-radius: 12px !important; padding: 6px !important; border: 1px solid #cbd5e1 !important; gap: 8px !important; }
+    .stTabs [data-baseweb="tab"] { background: transparent !important; border-radius: 8px !important; color: #475569 !important; font-size: 18px !important; font-weight: 600 !important; padding: 12px 24px !important; }
+    .stTabs [data-baseweb="tab"]:hover { color: #0f172a !important; background: #e2e8f0 !important; }
+    .stTabs [aria-selected="true"] { background: linear-gradient(135deg, #3b82f6, #2563eb) !important; color: #ffffff !important; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3) !important; border: none !important; }
     .stTabs [aria-selected="true"] { background: #ffffff !important; color: #1e40af !important; font-weight: 700 !important; border: 1px solid #bfdbfe !important; box-shadow: 0 1px 4px rgba(0,0,0,0.08) !important; }
     h1, h2, h3 { color: #0f172a !important; font-weight: 700 !important; }
     h4 { color: #475569 !important; font-weight: 600 !important; }
