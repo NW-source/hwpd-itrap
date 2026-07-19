@@ -511,22 +511,6 @@ if 'theme' not in st.session_state:
     st.session_state['theme'] = 'dark'
 
 _dark_css = """    /* ═══ DARK MODE ═══ */
-    /* --- Form Submit Button Fix --- */
-    [data-testid="stFormSubmitButton"] > button {
-        background: linear-gradient(135deg, rgba(16, 185, 129, 0.9), rgba(5, 150, 105, 1.0)) !important;
-        border: none !important;
-        color: #ffffff !important;
-        border-radius: 8px !important;
-        font-weight: 700 !important;
-        font-size: 14px !important;
-        transition: all 0.2s ease !important;
-        box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3) !important;
-    }
-    [data-testid="stFormSubmitButton"] > button:hover {
-        background: linear-gradient(135deg, rgba(16, 185, 129, 1.0), rgba(4, 120, 87, 1.0)) !important;
-        box-shadow: 0 6px 16px rgba(16, 185, 129, 0.5) !important;
-        transform: translateY(-2px);
-    }
 
 
 
@@ -560,9 +544,10 @@ _dark_css = """    /* ═══ DARK MODE ═══ */
     hr { border-color: rgba(59,130,246,0.1) !important; margin: 20px 0 !important; }
     /* Inputs */
     [data-testid="stSelectbox"] > div > div { background: #ffffff !important; border: 1px solid #94a3b8 !important; border-radius: 8px !important; color: #0f172a !important; }
-    [data-testid="stSelectbox"] div[data-baseweb="select"] * { color: #0f172a !important; font-size: 16px !important; font-weight: 700 !important; }
+    [data-testid="stSelectbox"] div[data-baseweb="select"] span { color: #0f172a !important; font-size: 18px !important; font-weight: 700 !important; }
+    [data-testid="stSelectbox"] div[data-baseweb="select"] div[role="button"] { color: #0f172a !important; font-size: 18px !important; font-weight: 700 !important; }
     [data-testid="stSelectbox"] ul[role="listbox"] { background: #ffffff !important; color: #0f172a !important; }
-    [data-testid="stSelectbox"] ul[role="listbox"] li { color: #0f172a !important; font-size: 16px !important; font-weight: 600 !important; padding-top: 10px !important; padding-bottom: 10px !important; }
+    [data-testid="stSelectbox"] ul[role="listbox"] li { color: #0f172a !important; font-size: 18px !important; font-weight: 700 !important; padding-top: 12px !important; padding-bottom: 12px !important; }
     .stTextInput input { background: rgba(15,23,42,0.8) !important; border: 1px solid rgba(59,130,246,0.2) !important; border-radius: 8px !important; color: #e2e8f0 !important; }
     .stButton > button { background: linear-gradient(135deg, rgba(29,78,216,0.3), rgba(99,102,241,0.3)) !important; border: 1px solid rgba(59,130,246,0.3) !important; color: #93c5fd !important; border-radius: 8px !important; font-weight: 600 !important; font-size: 13px !important; transition: all 0.2s ease !important; }
     .stButton > button:hover { background: linear-gradient(135deg, rgba(29,78,216,0.5), rgba(99,102,241,0.5)) !important; color: #dbeafe !important; box-shadow: 0 4px 16px rgba(59,130,246,0.2) !important; transform: translateY(-1px); }
@@ -2811,10 +2796,13 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
         # --- Sidebar Date Selector Form ---
         with st.sidebar.form("sidebar_date_form", border=False):
             st.markdown("<div style='font-size:14px; font-weight:600; color:#fbbf24; margin-bottom:8px;'>📅 ตัวกรองข้อมูลรายวัน</div>", unsafe_allow_html=True)
-            s_date = st.selectbox("เลือกวันที่:", available_dates, index=idx, label_visibility="collapsed")
-            if st.form_submit_button("✅ ยืนยัน", use_container_width=True):
-                st.session_state['confirmed_date'] = s_date
-                st.rerun()
+            c1, c2 = st.columns([7, 3])
+            with c1:
+                s_date = st.selectbox("เลือกวันที่:", available_dates, index=idx, label_visibility="collapsed")
+            with c2:
+                if st.form_submit_button("✅ ยืนยัน", use_container_width=True):
+                    st.session_state['confirmed_date'] = s_date
+                    st.rerun()
 
         st.markdown("""
         <div class="ticker-wrap">
@@ -2829,10 +2817,14 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
         # --- Main Date Selector Form ---
         with col_t2:
             with st.form("main_date_form", border=False):
-                m_date = st.selectbox("📅 เลือกวันที่รายงาน:", available_dates, index=idx)
-                if st.form_submit_button("✅ ยืนยัน", use_container_width=True):
-                    st.session_state['confirmed_date'] = m_date
-                    st.rerun()
+                st.markdown("<div style='font-size:14px; font-weight:600; color:#e2e8f0; margin-bottom:8px;'>📅 เลือกวันที่รายงาน:</div>", unsafe_allow_html=True)
+                c1, c2 = st.columns([7, 3])
+                with c1:
+                    m_date = st.selectbox("เลือกวันที่รายงาน:", available_dates, index=idx, label_visibility="collapsed")
+                with c2:
+                    if st.form_submit_button("✅ ยืนยัน", use_container_width=True):
+                        st.session_state['confirmed_date'] = m_date
+                        st.rerun()
                     
         selected_date = st.session_state['confirmed_date']
         with col_t1:
