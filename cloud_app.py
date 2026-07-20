@@ -45,9 +45,27 @@ except ImportError:
 st.set_page_config(page_title="HWPD 60 i-Trap Command Center", layout="wide", page_icon="🛡️", initial_sidebar_state="expanded")
 
 import os as _os
-DATA_DIR     = r"D:\itrap_agent"
+import sys as _sys
+
+# ★ ตรวจสอบ environment: Streamlit Cloud (Linux) vs Windows local
+_IS_CLOUD = _sys.platform != 'win32' or _os.path.exists('/mount/src')
+
+if _IS_CLOUD:
+    # Streamlit Cloud — repo อยู่ที่ /mount/src/hwpd-itrap/ (read-only)
+    # ใช้ /tmp สำหรับ SQLite (writable) และดึงข้อมูลจาก Supabase
+    _REPO_DIR = '/mount/src/hwpd-itrap'
+    DATA_DIR  = '/tmp'
+else:
+    DATA_DIR  = r"D:\itrap_agent"
+
 DB_PATH      = _os.path.join(DATA_DIR, "hwpd_master_database.db")
 PARQUET_PATH = _os.path.join(DATA_DIR, "hwpd_master_data.parquet")
+
+# บน Cloud ถ้า Parquet อยู่ใน repo ให้ใช้ path นั้นแทน (read-only แต่ OK สำหรับอ่าน)
+if _IS_CLOUD:
+    _repo_parquet = _os.path.join(_REPO_DIR, "hwpd_master_data.parquet")
+    if _os.path.exists(_repo_parquet):
+        PARQUET_PATH = _repo_parquet
 
 BORDER_PROVINCES = {
     # ── ชายแดนพม่า (Myanmar) ──────────────────────────────────────────────
