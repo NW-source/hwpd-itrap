@@ -2972,12 +2972,18 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
                 available_dates = [r['report_date'] for r in res.data]
         except: pass
         
+    _tz_th = timezone(timedelta(hours=7))  # Bangkok UTC+7
+    _cloud_today = datetime.now(_tz_th).strftime('%Y-%m-%d')
+
     if 'confirmed_date' not in st.session_state:
-        st.session_state['confirmed_date'] = datetime.now().strftime('%Y-%m-%d')
-        
-    if not available_dates:
-        st.info("📭 ยังไม่มีรายงานในระบบ Cloud กรุณาให้ Admin ทำการอัปโหลดข้อมูลจากศูนย์ก่อนครับ")
-        selected_date = st.session_state['confirmed_date']
+        st.session_state['confirmed_date'] = _cloud_today
+
+    # เพิ่มวันนี้เข้า list ถ้ายังไม่มี (เพื่อให้ Realtime tab แสดงได้)
+    if _cloud_today not in available_dates:
+        available_dates = [_cloud_today] + available_dates
+
+    if not available_dates or available_dates == [_cloud_today]:
+        selected_date = _cloud_today
     else:
         # Determine index for selectbox
         idx = 0
@@ -2986,7 +2992,6 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
         elif available_dates:
             st.session_state['confirmed_date'] = available_dates[0]
 
-        # --- Sidebar Date Selector Form ---
         with st.sidebar.form("sidebar_date_form", border=False):
             st.markdown("<div style='font-size:14px; font-weight:600; color:#fbbf24; margin-bottom:8px;'>📅 ตัวกรองข้อมูลรายวัน</div>", unsafe_allow_html=True)
             c1, c2 = st.columns([6, 4])
@@ -2996,6 +3001,7 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
                 if st.form_submit_button("✅ ยืนยัน", use_container_width=True):
                     st.session_state['confirmed_date'] = s_date
                     st.rerun()
+        selected_date = st.session_state['confirmed_date']
 
     st.sidebar.markdown("---")
     st.sidebar.markdown("### 🧭 เมนูเจาะลึกสถานการณ์")
