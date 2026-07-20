@@ -3295,15 +3295,7 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
                         _wconn.close()
                     except: _watch_today = 0
 
-                    # ── CSS: ทำปุ่มเจาะลึกขนาด auto + center ──────────────
-                    st.markdown("""
-<style>
-div[data-testid="stButton"]:has(button[kind="secondary"]) button {
-    padding: 4px 16px !important; font-size: 12px !important;
-    border-radius: 20px !important; min-width: 80px !important;
-    width: auto !important; display: block; margin: 4px auto 0 auto;
-}
-</style>""", unsafe_allow_html=True)
+                    import streamlit.components.v1 as _cv1
                     col1, col2, col3, col4, col5 = st.columns(5)
                     with col1:
                         st.markdown(f"<div class='metric-card card-apex'><div class='metric-label'>🚨 ระดับสูงสุด</div><div class='metric-value'>{len(apex_df)}</div></div>", unsafe_allow_html=True)
@@ -3319,6 +3311,31 @@ div[data-testid="stButton"]:has(button[kind="secondary"]) button {
                     with col5:
                         st.markdown(f"<div class='metric-card card-watch'><div class='metric-label'>⭐ Watch List วันนี้</div><div class='metric-value'>{_watch_today}</div></div>", unsafe_allow_html=True)
                         if st.button("🔍 เจาะลึก", key="btn_watch_d"): change_tab("⭐ รถที่น่าสนใจ"); st.rerun()
+                    # ── JS: resize drill buttons via components.html (executes in iFrame, same origin) ──
+                    _cv1.html("""<script>
+(function go(){
+  try{
+    var doc=window.parent.document;
+    var all=doc.querySelectorAll('[data-testid="baseButton-secondary"]');
+    var found=0;
+    all.forEach(function(b){
+      if((b.innerText||b.textContent).indexOf('เจาะลึก')>=0){
+        found++;
+        b.style.cssText=[
+          'width:fit-content','padding:5px 20px','font-size:12px',
+          'border-radius:20px','display:block','margin:4px auto 0',
+          'background:linear-gradient(135deg,rgba(255,255,255,.1),rgba(255,255,255,.04))',
+          'border:1px solid rgba(255,255,255,.2)','box-shadow:none',
+          'letter-spacing:.3px','cursor:pointer'
+        ].join('!important;')+'!important';
+        var wrap=b.closest('[data-testid="stButton"]');
+        if(wrap) wrap.style.cssText='display:flex;justify-content:center;';
+      }
+    });
+    if(found<4) setTimeout(go,300);
+  }catch(e){setTimeout(go,400);}
+})();
+</script>""",height=0)
                         
                 with tab_repeat:
                     if _sel_str != _today_str:
