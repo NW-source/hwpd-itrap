@@ -44,10 +44,48 @@ except ImportError:
 # ==========================================
 st.set_page_config(page_title="HWPD 60 i-Trap Command Center", layout="wide", page_icon="🛡️", initial_sidebar_state="expanded")
 
-DB_PATH = "hwpd_master_database.db"
-PARQUET_PATH = "hwpd_master_data.parquet"
+DATA_DIR = r"D:\itrap_agent"
+DATA_RETENTION_DAYS = 60
+os.makedirs(DATA_DIR, exist_ok=True)
+DB_PATH      = os.path.join(DATA_DIR, "hwpd_master_database.db")
+PARQUET_PATH = os.path.join(DATA_DIR, "hwpd_master_data.parquet")
 
-BORDER_PROVINCES = {'หนองคาย', 'บึงกาฬ', 'นครพนม', 'มุกดาหาร', 'อำนาจเจริญ', 'อุบลราชธานี', 'ศรีสะเกษ', 'สุรินทร์', 'บุรีรัมย์', 'สระแก้ว', 'จันทบุรี', 'ตราด', 'เลย', 'อุดรธานี'}
+BORDER_PROVINCES = {
+    # ── ชายแดนพม่า (Myanmar) ──────────────────────────────────────────────
+    'เชียงราย',      # แม่สาย, เชียงแสน, เชียงของ
+    'เชียงใหม่',     # ใกล้พม่า อ.ฝาง
+    'แม่ฮ่องสอน',   # พรมแดนพม่าทั้งจังหวัด
+    'ตาก',           # แม่สอด, แม่ระมาด, ท่าสองยาง
+    'กาญจนบุรี',    # เจดีย์สามองค์, พุน้ำร้อน
+    'ราชบุรี',       # ใกล้ชายแดนพม่าตอนใต้
+    'ประจวบคีรีขันธ์', # ด่านสิงขร
+    'ระนอง',        # ด่านระนอง-เกาะสอง
+    'ชุมพร',        # ใกล้ระนอง
+    # ── ชายแดนลาว (Laos) ─────────────────────────────────────────────────
+    'เลย',           # ท่าลี่, เชียงคาน
+    'หนองคาย',      # ด่านสะพานมิตรภาพ 1
+    'บึงกาฬ',       # ด่านบึงกาฬ
+    'นครพนม',       # สะพานมิตรภาพ 3
+    'มุกดาหาร',     # สะพานมิตรภาพ 2
+    'อำนาจเจริญ',   # ใกล้ลาว
+    'อุบลราชธานี',  # ช่องเม็ก, วังตาล
+    'อุดรธานี',     # ใกล้หนองคาย
+    'น่าน',          # ชายแดนลาวตอนบน
+    'พะเยา',        # ใกล้น่าน-ลาว
+    # ── ชายแดนกัมพูชา (Cambodia) ─────────────────────────────────────────
+    'ศรีสะเกษ',     # ช่องสะงำ, ภูมิสรอล
+    'สุรินทร์',      # ช่องจอม, ด่านจอม
+    'บุรีรัมย์',    # ช่องจอม
+    'สระแก้ว',      # อรัญประเทศ, บ้านคลองลึก
+    'จันทบุรี',      # บ้านปากาด, บ้านผักกาด
+    'ตราด',          # หาดเล็ก, บ้านใหม่
+    # ── ชายแดนมาเลเซีย (Malaysia) ────────────────────────────────────────
+    'สงขลา',        # สะเดา, บ้านประกอบ
+    'สตูล',          # วังประจัน, บ้านประกอบ
+    'ยะลา',          # เบตง
+    'นราธิวาส',     # สุไหงโกลก, ตากใบ, บ้านบูเก๊ะตา
+    'ปัตตานี',      # ใกล้ชายแดน
+}
 
 # ── Helper: Export Excel ────────────────────────────────────────────────
 def excel_download_button(df: pd.DataFrame, filename: str, label: str = "📥 Export Excel"):
@@ -155,74 +193,158 @@ def ensure_realtime_table():
         conn = sqlite3.connect(DB_PATH)
         conn.execute("""
             CREATE TABLE IF NOT EXISTS realtime_session (
-                session_date TEXT PRIMARY KEY,
-                raw_data_json TEXT,
-                upload_count  INTEGER DEFAULT 1,
+                session_date      TEXT PRIMARY KEY,
+                raw_data_blob     BLOB,
+                upload_count      INTEGER DEFAULT 1,
                 first_record_time TEXT,
                 last_record_time  TEXT,
-                updated_at TEXT
+                updated_at        TEXT
             )
         """)
+        # ★ Migration guard: ถ้า table เก่ายังมี raw_data_json → เพิ่ม raw_data_blob
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(realtime_session)").fetchall()]
+        if 'raw_data_json' in cols and 'raw_data_blob' not in cols:
+            conn.execute("ALTER TABLE realtime_session ADD COLUMN raw_data_blob BLOB")
         conn.commit(); conn.close()
     except: pass
 
 def save_realtime_session(active_db_pd: pd.DataFrame, session_date: str):
-    """เก็บ/สะสมข้อมูล Realtime ของวันนี้"""
+    """เก็บ/สะสมข้อมูล Realtime ของวันนี้ (Parquet BLOB)
+    ★ รองรับทั้ง DB เก่า (raw_data_json) และ DB ใหม่ (raw_data_blob)
+    ★ ถ้า Local ไม่มีข้อมูลเก่า → ดึงจาก Supabase ก่อน (กัน restart เครื่อง)
+    """
+    import io as _io
     ensure_realtime_table()
     try:
         conn = sqlite3.connect(DB_PATH)
+        # ★ ตรวจก่อนว่า column ไหนมีอยู่จริง
+        _cols = [r[1] for r in conn.execute("PRAGMA table_info(realtime_session)").fetchall()]
+        _has_blob = 'raw_data_blob' in _cols
+        _has_json = 'raw_data_json' in _cols
+
+        # สร้าง SELECT ตาม column ที่มีอยู่จริง
+        if _has_blob and _has_json:
+            _sel = "raw_data_blob, raw_data_json, upload_count"
+        elif _has_blob:
+            _sel = "raw_data_blob, NULL as raw_data_json, upload_count"
+        else:
+            _sel = "NULL as raw_data_blob, raw_data_json, upload_count"
+
         existing = conn.execute(
-            "SELECT raw_data_json, upload_count FROM realtime_session WHERE session_date=?",
+            f"SELECT {_sel} FROM realtime_session WHERE session_date=?",
             (session_date,)
         ).fetchone()
-        if existing and existing[0]:
-            old_df = pd.read_json(existing[0])
-            if 'Datetime' in old_df.columns: old_df['Datetime'] = pd.to_datetime(old_df['Datetime'])
-            new_df = active_db_pd.copy()
-            if 'Datetime' in new_df.columns: new_df['Datetime'] = pd.to_datetime(new_df['Datetime'])
+
+        old_df = pd.DataFrame()
+        upload_count = 0
+
+        if existing:
+            old_blob, old_json, upload_count = existing
+            if old_blob:
+                old_df = pd.read_parquet(_io.BytesIO(old_blob))
+            elif old_json:
+                old_df = pd.read_json(_io.StringIO(old_json))
+        else:
+            # ★ ไม่มีใน Local → ดึงจาก Supabase (กรณีลูกน้อง restart เครื่อง)
+            try:
+                from supabase_sync import pull_parquet_from_cloud, is_supabase_configured
+                if is_supabase_configured():
+                    cloud_pl = pull_parquet_from_cloud(session_date)
+                    if cloud_pl is not None:
+                        old_df = cloud_pl.to_pandas()
+                        from supabase_sync import pull_realtime
+                        rt_meta = pull_realtime(session_date)
+                        upload_count = rt_meta.get('upload_count', 1) if rt_meta else 1
+            except Exception:
+                pass
+
+        if 'Datetime' in old_df.columns:
+            old_df['Datetime'] = pd.to_datetime(old_df['Datetime'])
+        new_df = active_db_pd.copy()
+        if 'Datetime' in new_df.columns:
+            new_df['Datetime'] = pd.to_datetime(new_df['Datetime'])
+
+        if not old_df.empty:
             combined = pd.concat([old_df, new_df], ignore_index=True)
             _dd = [c for c in ['Datetime','ทะเบียน_Full','จุดติดตั้งกล้อง'] if c in combined.columns]
             if _dd: combined = combined.drop_duplicates(subset=_dd)
-            upload_count = existing[1] + 1
         else:
-            combined = active_db_pd.copy()
-            if 'Datetime' in combined.columns: combined['Datetime'] = pd.to_datetime(combined['Datetime'])
-            upload_count = 1
+            combined = new_df
+        upload_count = upload_count + 1
+
         first_t = str(combined['Datetime'].min()) if 'Datetime' in combined.columns else '-'
         last_t  = str(combined['Datetime'].max()) if 'Datetime' in combined.columns else '-'
+
+        buf = _io.BytesIO()
+        combined.to_parquet(buf, engine='pyarrow', compression='zstd', index=False)
+        blob = buf.getvalue()
+
         conn.execute("""INSERT OR REPLACE INTO realtime_session
-            (session_date, raw_data_json, upload_count, first_record_time, last_record_time, updated_at)
+            (session_date, raw_data_blob, upload_count, first_record_time, last_record_time, updated_at)
             VALUES (?,?,?,?,?,?)""",
-            (session_date, combined.to_json(), upload_count, first_t, last_t,
+            (session_date, blob, upload_count, first_t, last_t,
              datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
         conn.commit(); conn.close()
     except: pass
 
 def load_realtime_session(session_date: str):
+    """โหลด Realtime session (รองรับทั้ง DB เก่า/ใหม่)"""
+    import io as _io
     ensure_realtime_table()
     try:
         conn = sqlite3.connect(DB_PATH)
-        row = conn.execute(
-            "SELECT session_date, raw_data_json, upload_count, "
-            "first_record_time, last_record_time, updated_at "
-            "FROM realtime_session WHERE session_date=?", (session_date,)
-        ).fetchone()
-        conn.close()
-        if row and row[1]:
-            import io as _io
-            df = pd.read_json(_io.StringIO(row[1]))  # ← pandas 2.x compat
-            if 'Datetime' in df.columns:
-                df['Datetime'] = pd.to_datetime(df['Datetime'])
-            return {'df': df, 'upload_count': row[2],
-                    'first_time': row[3], 'last_time': row[4], 'updated_at': row[5]}
-        return None  # row not found
-    except Exception as _e:
-        import traceback as _tb
-        # เก็บ error ไว้ใน session_state เพื่อ debug
-        import streamlit as _st
-        _st.session_state['_rt_load_error'] = f"{_e}\n{_tb.format_exc()}"
-        return None
+        # ★ ตรวจก่อนว่า column ไหนมีอยู่จริง — กัน no such column error
+        _cols = [r[1] for r in conn.execute("PRAGMA table_info(realtime_session)").fetchall()]
+        _has_blob = 'raw_data_blob' in _cols
+        _has_json = 'raw_data_json' in _cols
 
+        if _has_blob and _has_json:
+            # ตารางเก่า (migration ยังไม่เสร็จ) — มีทั้งสอง column
+            row = conn.execute(
+                "SELECT session_date, raw_data_blob, raw_data_json, upload_count, "
+                "first_record_time, last_record_time, updated_at "
+                "FROM realtime_session WHERE session_date=?", (session_date,)
+            ).fetchone()
+            conn.close()
+            if not row: return None
+            _, blob, old_json, upload_count, first_t, last_t, upd = row
+            if blob:
+                df = pd.read_parquet(_io.BytesIO(blob))
+            elif old_json:
+                df = pd.read_json(_io.StringIO(old_json))
+            else:
+                return None
+        elif _has_blob:
+            # ★ ตารางใหม่ (migrated) — มีแค่ raw_data_blob
+            row = conn.execute(
+                "SELECT session_date, raw_data_blob, upload_count, "
+                "first_record_time, last_record_time, updated_at "
+                "FROM realtime_session WHERE session_date=?", (session_date,)
+            ).fetchone()
+            conn.close()
+            if not row or not row[1]: return None
+            _, blob, upload_count, first_t, last_t, upd = row
+            df = pd.read_parquet(_io.BytesIO(blob))
+        else:
+            # ตารางเก่ามาก — มีแค่ raw_data_json
+            row = conn.execute(
+                "SELECT session_date, raw_data_json, upload_count, "
+                "first_record_time, last_record_time, updated_at "
+                "FROM realtime_session WHERE session_date=?", (session_date,)
+            ).fetchone()
+            conn.close()
+            if not row or not row[1]: return None
+            _, raw_json, upload_count, first_t, last_t, upd = row
+            df = pd.read_json(_io.StringIO(raw_json))
+
+        if 'Datetime' in df.columns:
+            df['Datetime'] = pd.to_datetime(df['Datetime'])
+        return {'df': df, 'upload_count': upload_count,
+                'first_time': first_t, 'last_time': last_t, 'updated_at': upd}
+    except Exception as _e:
+        import streamlit as _st
+        _st.session_state['_rt_load_error'] = str(_e)
+        return None
 def generate_rt_recommendation(engine_type: str, confidence: str, n_cams: int, last_cam: str) -> str:
     if confidence == 'confirmed':
         if 'สวมทะเบียน' in engine_type:
@@ -776,8 +898,8 @@ def save_to_memory(new_df_pl, current_db_pl, cloud_db_pl=None):
     combined = pl.concat(sources, how="vertical_relaxed") if len(sources) > 1 else new_df_pl
     combined = combined.unique(subset=["ทะเบียน_Full", "Datetime", "จุดติดตั้งกล้อง"], keep="first")
 
-    thirty_days_ago = datetime.now() - timedelta(days=30)
-    combined = combined.filter(pl.col("Datetime") >= thirty_days_ago)
+    cutoff_dt = datetime.now() - timedelta(days=DATA_RETENTION_DAYS)
+    combined = combined.filter(pl.col("Datetime") >= cutoff_dt)
 
     combined.write_parquet(PARQUET_PATH, compression="zstd")
     return combined
@@ -998,7 +1120,43 @@ def process_raw_data_polars(df_pd):
         Speed_kmh=pl.when(pl.col('time_diff_hr') > 0).then(pl.col('dist_km') / pl.col('time_diff_hr')).otherwise(0.0)
     )
     
-    BORDER_ANCHORS = [(17.88, 102.75), (18.36, 103.65), (17.40, 104.78), (16.54, 104.73), (15.11, 105.47), (14.35, 104.05), (14.41, 103.85), (14.34, 103.22)]
+    BORDER_ANCHORS = [
+        # ── พม่า (Myanmar) ──────────────────────────────────────────
+        (20.42, 99.88),   # แม่สาย เชียงราย
+        (20.27, 100.08),  # เชียงแสน เชียงราย
+        (19.30, 97.97),   # แม่ฮ่องสอน (เมือง)
+        (18.52, 97.59),   # ปาย แม่ฮ่องสอน
+        (16.72, 98.57),   # แม่สอด ตาก ★ ด่านหลัก
+        (16.98, 98.51),   # แม่ระมาด ตาก
+        (17.57, 98.14),   # ท่าสองยาง ตาก
+        (15.32, 98.40),   # เจดีย์สามองค์ กาญจนบุรี ★ ด่านหลัก
+        (15.22, 98.33),   # พุน้ำร้อน กาญจนบุรี
+        (11.80, 99.43),   # สิงขร ประจวบคีรีขันธ์
+        ( 9.97, 98.60),   # ระนอง ★ ด่านหลัก
+        # ── ลาว (Laos) ──────────────────────────────────────────────
+        (20.26, 100.40),  # เชียงของ เชียงราย ★ สะพานมิตรภาพ 4
+        (17.87, 101.43),  # ท่าลี่ เลย
+        (17.88, 102.75),  # หนองคาย ★ สะพานมิตรภาพ 1
+        (18.36, 103.65),  # บึงกาฬ ★ ด่านบึงกาฬ
+        (17.40, 104.78),  # นครพนม ★ สะพานมิตรภาพ 3
+        (16.54, 104.73),  # มุกดาหาร ★ สะพานมิตรภาพ 2
+        (15.20, 105.54),  # ช่องเม็ก อุบลราชธานี ★ ด่านหลัก
+        (17.00, 102.10),  # เวียงจันทน์ฝั่งไทย (ท่าบก)
+        # ── กัมพูชา (Cambodia) ──────────────────────────────────────
+        (14.38, 103.72),  # ช่องจอม สุรินทร์ ★ ด่านหลัก
+        (14.02, 104.13),  # ช่องสะงำ ศรีสะเกษ
+        (14.61, 102.98),  # บุรีรัมย์ (ช่อง)
+        (13.69, 102.52),  # อรัญประเทศ สระแก้ว ★ ด่านหลัก
+        (13.32, 102.53),  # บ้านคลองลึก สระแก้ว
+        (12.53, 102.57),  # บ้านปากาด จันทบุรี ★ ด่านหลัก
+        (11.66, 102.91),  # หาดเล็ก ตราด ★ ด่านหลัก
+        # ── มาเลเซีย (Malaysia) ─────────────────────────────────────
+        ( 6.64, 100.43),  # สะเดา สงขลา ★ ด่านหลัก (ยิ่งใหญ่ที่สุด)
+        ( 6.69, 100.27),  # วังประจัน สตูล
+        ( 5.78, 101.08),  # เบตง ยะลา ★ ด่านหลัก
+        ( 6.03, 101.97),  # สุไหงโกลก นราธิวาส ★ ด่านหลัก
+        ( 6.26, 102.07),  # ตากใบ นราธิวาส
+    ]
     _BA = np.array(BORDER_ANCHORS)  # shape (8, 2)
     _ba_lats_r = np.radians(_BA[:, 0])
     _ba_lons_r = np.radians(_BA[:, 1])
@@ -1035,7 +1193,15 @@ def run_intelligence_orchestrator(active_db_pl,
     conn = sqlite3.connect(DB_PATH)
     wl_df = pd.read_sql("SELECT ทะเบียนรถ FROM whitelist_master", conn)
     conn.close()
-    whitelist_plates = set(wl_df['ทะเบียนรถ'].tolist())
+    whitelist_plates_local = set(wl_df['ทะเบียนรถ'].tolist())
+    try:
+        from supabase_sync import pull_whitelist, is_supabase_configured
+        if is_supabase_configured():
+            whitelist_plates = whitelist_plates_local | pull_whitelist()
+        else:
+            whitelist_plates = whitelist_plates_local
+    except Exception:
+        whitelist_plates = whitelist_plates_local
     
     if not active_db.empty and 'ทะเบียน_Full' in active_db.columns:
         active_db = active_db[~active_db['ทะเบียน_Full'].isin(whitelist_plates)]
@@ -1054,7 +1220,7 @@ def run_intelligence_orchestrator(active_db_pl,
     if not active_db.empty and 'Speed_kmh' in active_db.columns:
         # E1 ตะแกรง 3 เงื่อนไข (UK NADC + Interpol standard):
         e1_speed_mask   = (active_db['Speed_kmh'] > 250) & (active_db['dist_km'] >= 60)     # UK NADC: ≥ 250 km/h
-        e1_paradox_mask = (active_db['time_diff_hr'] == 0) & (active_db['dist_km'] >= 100)  # พร้อมกัน 2 กล้อง ≥ 100 km
+        e1_paradox_mask = (active_db['time_diff_hr'] < (1/60)) & (active_db['dist_km'] >= 100)  # พร้อมกัน 2 กล้อง ≥ 100 km
         e1_sameregion   = (active_db['time_diff_hr'] <= 1.0) & (active_db['dist_km'] >= 200) # Interpol: 1 ชม. ≥ 200 km
         _cam_diff = active_db['จุดติดตั้งกล้อง'] != active_db['prev_cam']
         e1_mask   = (e1_speed_mask | e1_paradox_mask | e1_sameregion) & _cam_diff
@@ -1335,6 +1501,7 @@ def run_intelligence_orchestrator(active_db_pl,
             # ★ ตะแกรง U-turn: ต้องเป็น Zone A ที่ "ออก" และ Zone A ที่ "เข้า" (เข้มขึ้น)
             gap_indices = np.where((time_diffs >= 1.0) & (time_diffs <= 4.0))[0]
 
+            # ── Short U-turn (1-4 ชม.) ──────────────────────────────────
             for idx in gap_indices:
                 if idx >= len(df_target): continue
                 zone_before = df_target['Zone'].iloc[idx-1]
@@ -1347,6 +1514,23 @@ def run_intelligence_orchestrator(active_db_pl,
                         and dir_before == 'ออก' and dir_after == 'เข้า'):
                     is_drop_pick = True
                     _uturn_count += 1
+
+            # ── Overnight U-turn (4-12 ชม.) Zone A — DEA/Europol FRONTEX ──
+            # กลุ่มที่ "ค้างคืน" ฝั่งชายแดนแล้วกลับมา = รับ/ส่งสินค้าข้ามคืน
+            _is_overnight_uturn = False
+            _overnight_count    = 0
+            overnight_indices = np.where((time_diffs >= 4.0) & (time_diffs <= 12.0))[0]
+            for idx in overnight_indices:
+                if idx >= len(df_target): continue
+                zb = df_target['Zone'].iloc[idx-1]
+                za = df_target['Zone'].iloc[idx]
+                db = df_target['Direction'].iloc[idx-1]
+                da = df_target['Direction'].iloc[idx]
+                # ออก Zone A ค้างคืน 4-12 ชม. → กลับเข้า Zone A = signature ชัดเจน
+                if zb == 'A' and za == 'A' and db == 'ออก' and da == 'เข้า':
+                    _is_overnight_uturn = True
+                    _overnight_count   += 1
+                    is_drop_pick = True  # นับรวม trigger ด้วย
 
             if not is_drop_pick: continue   # ถ้าไม่ใช่ U-turn Zone-A จริง → เตะทิ้ง
 
@@ -1367,6 +1551,16 @@ def run_intelligence_orchestrator(active_db_pl,
                           else "ตีวงกลับโฉบรับ/ส่งชายแดน")
             compound_triggers.append(f"{_uturn_txt} (ออก Zone A → แช่ 1-4 ชม. → เข้า Zone A)")
             base_score += 20
+
+            # Trigger 1c: Overnight U-turn — DEA/Europol FRONTEX (ค้างคืนชายแดน)
+            if _is_overnight_uturn:
+                _ov_txt = (f"ค้างคืน {_overnight_count} รอบ" if _overnight_count > 1
+                           else "ค้างคืนชายแดน")
+                compound_triggers.append(
+                    f"Overnight Border Stay: {_ov_txt} (ออก Zone A → ค้าง 4-12 ชม. → เข้า Zone A) "
+                    f"— รับ/ส่งสินค้าข้ามคืน [DEA/Europol FRONTEX]"
+                )
+                base_score += 20
 
             # Trigger 1b: Repeat Offender — DEA/ปปส. standard: ยิ่งซ้ำหลายวัน ยิ่งอันตราย
             if unique_days >= 3:
@@ -1427,7 +1621,13 @@ def run_intelligence_orchestrator(active_db_pl,
             _e4_total_counts = active_db.groupby('ทะเบียน_Full').size()
             _e4_border_cams  = border_night.groupby('ทะเบียน_Full')['จุดติดตั้งกล้อง'].nunique()
 
-            _e4_candidates = _e4_night_counts[_e4_night_counts >= 3].index
+            _e4_night_counts = _e4_night_counts[_e4_night_counts >= 3]
+            # ★ DEA standard: ต้องเกิดซ้ำอย่างน้อย 2 วัน (ไม่ใช่รถกะดึกรายเดียว)
+            _e4_unique_days = border_night.groupby('ทะเบียน_Full')['Datetime'].apply(
+                lambda x: x.dt.date.nunique())
+            _e4_night_counts = _e4_night_counts[
+                _e4_night_counts.index.map(lambda p: _e4_unique_days.get(p, 1) >= 2)]
+            _e4_candidates = _e4_night_counts.index
 
             for plate in _e4_candidates:
                 if plate in e1_plates: continue
@@ -1527,7 +1727,9 @@ def run_intelligence_orchestrator(active_db_pl,
                 "พฤติกรรมต้องสงสัย": " | ".join(data["reasons"]),
                 "ผ่านร่วมกัน (ด่าน)": data["cams"],
                 "ระยะห่างเฉลี่ย": data["gap"], 
-                "Risk Score": min(100, int(data["score"] * 1.15) if is_apex else data["score"]),
+                "Risk Score": min(100, data["score"]),
+            "Apex_Flag": "👑 APEX" if is_apex else "",
+            "Apex_Boost": f"+{int(data["score"] * 0.15)}" if is_apex else "0",
                 "จุดตรวจพบล่าสุด": f"📍 {last_row['จุดติดตั้งกล้อง']}", 
                 "เวลาโผล่ล่าสุด": str(last_row['เวลา']),
                 "Cars_List": [str(c) for c in data["cars"]],
@@ -1540,7 +1742,7 @@ def run_intelligence_orchestrator(active_db_pl,
     if priority_list:
         return pd.DataFrame(priority_list).sort_values(by="Risk Score", ascending=False).reset_index(drop=True)
     else:
-        return pd.DataFrame(columns=["Target_ID", "เป้าหมาย", "ประเภท", "พฤติกรรมต้องสงสัย", "ผ่านร่วมกัน (ด่าน)", "ระยะห่างเฉลี่ย", "Risk Score", "จุดตรวจพบล่าสุด", "เวลาโผล่ล่าสุด", "Cars_List", "Radar_Data", "Speed_Warp", "Total_Dist"])
+        return pd.DataFrame(columns=["Target_ID", "เป้าหมาย", "ประเภท", "พฤติกรรมต้องสงสัย", "ผ่านร่วมกัน (ด่าน)", "ระยะห่างเฉลี่ย", "Risk Score", "จุดตรวจพบล่าสุด", "เวลาโผล่ล่าสุด", "Cars_List", "Radar_Data", "Speed_Warp", "Total_Dist", "Apex_Flag", "Apex_Boost"])
 
 # ==========================================
 # 4. ส่วนแสดงผลปฏิบัติการ (Dashboard & UI)
@@ -2795,79 +2997,277 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
                 cum30_apex, cum30_clone, cum30_car, cum30_other = calc_cum(mask_30)
 
                 st.markdown("### 📊 ข้อมูลสรุปเป้าหมายสำคัญ (Intelligence Brief)")
-                tab_realtime, tab_daily, tab_repeat = st.tabs([
-                    "⚡ Realtime",
-                    "📅 ประจำวัน (Daily)",
-                    "🔁 รถวิ่งซ้ำ (30 วัน)",
-                ])
 
-                
-                with tab_realtime:
-                    # ── ✅ Realtime = วันปัจจุบันเท่านั้น ─────────────────────
-                    _today_str = datetime.now().strftime('%Y-%m-%d')   # ← fix: from datetime import datetime
+                _today_str = datetime.now().strftime('%Y-%m-%d')
+                _sel_str   = str(selected_date)[:10]
+                _is_today  = (_sel_str == _today_str)
 
-                    _sel_str   = str(selected_date)[:10]  # YYYY-MM-DD
+                if _is_today:
+                    # ── วันนี้ → แสดง 2 tabs: Realtime (รวมรถซ้ำ) | ประจำวัน ──────
+                    tab_realtime, tab_daily = st.tabs([
+                        "⚡ Realtime + รถวิ่งซ้ำ",
+                        "📅 ประจำวัน (Daily)",
+                    ])
+                else:
+                    # ── วันย้อนหลัง → แสดงแค่ ประจำวัน เท่านั้น ──────────────────
+                    st.info(f"📅 กำลังแสดงข้อมูลย้อนหลัง: **{_sel_str}** — เลือกวันนี้ ({_today_str}) เพื่อดู Realtime")
+                    tab_daily = st.tabs(["📅 ประจำวัน (Daily)"])[0]
+                    tab_realtime = None
 
-                    if _sel_str != _today_str:
-                        # ── วันที่เลือกเป็นวันก่อนหน้า → แสดงข้อความ ──────────
-                        st.markdown(f"""
-                        <div style='background:rgba(30,58,138,0.15);border-left:4px solid #3b82f6;
+                if tab_realtime is not None:
+                  with tab_realtime:
+                    # ── ✅ Realtime = วันปัจจุบันเท่านั้น ────────────────────────
+                    _rt_session = load_realtime_session(_today_str)
+
+                    if _rt_session is None or _rt_session['df'].empty:
+                        _load_err = st.session_state.pop('_rt_load_error', None)
+                        if _load_err:
+                            st.error(f"❌ โหลดข้อมูล Realtime ไม่สำเร็จ:")
+                            st.code(_load_err)
+                        else:
+                            st.markdown(f"""
+                        <div style='background:rgba(245,158,11,0.10);border-left:4px solid #f59e0b;
                             padding:24px;border-radius:12px;margin:16px 0;'>
-                            <div style='font-size:32px;margin-bottom:12px;'>📅</div>
-                            <div style='font-size:18px;font-weight:700;color:#93c5fd;margin-bottom:8px;'>
-                                Realtime ใช้ได้เฉพาะวันปัจจุบันเท่านั้น
+                            <div style='font-size:32px;margin-bottom:12px;'>⏳</div>
+                            <div style='font-size:18px;font-weight:700;color:#fbbf24;margin-bottom:8px;'>
+                                ยังไม่มีข้อมูล Realtime วันนี้ ({_today_str})
                             </div>
                             <div style='font-size:14px;color:#94a3b8;line-height:1.8;'>
-                                วันที่ <b style='color:#fbbf24;'>{_sel_str}</b> เป็นข้อมูลย้อนหลัง
-                                ไม่มีสตรีมสดสำหรับวันนั้นอีกต่อไป<br>
-                                กรุณาดูข้อมูลย้อนหลังได้ที่แท็บ
-                                <b style='color:#a5b4fc;'>📅 ประจำวัน (Daily)</b> แทน<br><br>
-                                🟢 หากต้องการดู Realtime — เลือกวันที่
-                                <b style='color:#34d399;'>{_today_str}</b> (วันนี้)
+                                ระบบพร้อมรอรับข้อมูล — กรุณาให้ Admin อัปโหลดไฟล์
+                                ผ่าน <b style='color:#a5b4fc;'>Admin Portal</b> เพื่อเริ่มการวิเคราะห์ Realtime<br><br>
+                                ⚡ เมื่ออัปโหลดแล้ว หน้านี้จะแสดงผลวิเคราะห์อัตโนมัติ
                             </div>
                         </div>
                         """, unsafe_allow_html=True)
 
                     else:
-                        # ── วันนี้ → โหลดจาก realtime_session table ───────────
-                        _rt_session = load_realtime_session(_today_str)
+                        # ── มีข้อมูล → render realtime tab ─────────────────
+                        st.session_state['_rt_upload_count'] = _rt_session.get('upload_count', 1)
+                        _rt_today_df = _rt_session['df']
+                        try:
+                            render_realtime_tab(_today_str, _rt_today_df, priority_df)
+                        except Exception as _rte:
+                            import traceback
+                            st.error(f"❌ Realtime Error: {_rte}")
+                            st.code(traceback.format_exc())
 
-                        if _rt_session is None or _rt_session['df'].empty:
-                            # แสดง debug error ถ้ามี
-                            _load_err = st.session_state.pop('_rt_load_error', None)
-                            if _load_err:
-                                st.error(f"❌ โหลดข้อมูล Realtime ไม่สำเร็จ:")
-                                st.code(_load_err)
-                            else:
-                                st.markdown(f"""
-                            <div style='background:rgba(245,158,11,0.10);border-left:4px solid #f59e0b;
-                                padding:24px;border-radius:12px;margin:16px 0;'>
-                                <div style='font-size:32px;margin-bottom:12px;'>⏳</div>
-                                <div style='font-size:18px;font-weight:700;color:#fbbf24;margin-bottom:8px;'>
-                                    ยังไม่มีข้อมูล Realtime วันนี้ ({_today_str})
-                                </div>
-                                <div style='font-size:14px;color:#94a3b8;line-height:1.8;'>
-                                    ระบบพร้อมรอรับข้อมูล — กรุณาให้ Admin อัปโหลดไฟล์ CSV
-                                    ผ่าน <b style='color:#a5b4fc;'>Admin Portal</b> เพื่อเริ่มการวิเคราะห์ Realtime<br><br>
-                                    ⚡ เมื่ออัปโหลดแล้ว หน้านี้จะแสดงผลวิเคราะห์อัตโนมัติ
-                                </div>
-                            </div>
-                            """, unsafe_allow_html=True)
+                    # ══ รถวิ่งซ้ำ (Repeat Offender) — แสดงใน Realtime Tab ══
+                    st.markdown("---")
+                    st.markdown("### 🔁 รถวิ่งซ้ำในช่วง 30 วัน (Repeat Offenders)")
+                    _rep_rt = repeat_offender_analysis(DB_PATH, _today_str, window_days=30, min_days=2)
+                    if _rep_rt.empty:
+                        st.info("⚠️ ยังไม่พบทะเบียนที่ปรากฏซ้ำ ≥ 2 วัน ในช่วง 30 วันที่ผ่านมา")
+                    else:
+                        _rr_clone  = _rep_rt[_rep_rt['ประเภทหลัก'].str.contains('สวมทะเบียน', na=False)]
+                        _rr_conv   = _rep_rt[_rep_rt['ประเภทหลัก'].str.contains('ขบวน', na=False)]
+                        _rr_susp   = _rep_rt[~_rep_rt['ประเภทหลัก'].str.contains('สวมทะเบียน|ขบวน', na=False)]
+                        rrc1, rrc2, rrc3 = st.columns(3)
+                        with rrc1: st.markdown(f"<div class='metric-card card-clone'><div class='metric-label'>🚗 สวมทะเบียนซ้ำ</div><div class='metric-value'>{len(_rr_clone)}</div><div style='font-size:11px;color:#94a3b8'>≥2 วัน / 30 วัน</div></div>", unsafe_allow_html=True)
+                        with rrc2: st.markdown(f"<div class='metric-card card-car'><div class='metric-label'>🏎️ ขบวนรถซ้ำ</div><div class='metric-value'>{len(_rr_conv)}</div><div style='font-size:11px;color:#94a3b8'>≥2 วัน / 30 วัน</div></div>", unsafe_allow_html=True)
+                        with rrc3: st.markdown(f"<div class='metric-card card-anomaly'><div class='metric-label'>🔍 ต้องสงสัยซ้ำ</div><div class='metric-value'>{len(_rr_susp)}</div><div style='font-size:11px;color:#94a3b8'>≥2 วัน / 30 วัน</div></div>", unsafe_allow_html=True)
 
-                        else:
-                            # ── มีข้อมูล → render realtime tab ───────────────
-                            st.session_state['_rt_upload_count'] = _rt_session.get('upload_count', 1)
-                            _rt_today_df = _rt_session['df']
-                            try:
-                                render_realtime_tab(_today_str, _rt_today_df, priority_df)
-                            except Exception as _rte:
-                                import traceback
-                                st.error(f"❌ Realtime Error: {_rte}")
-                                st.code(traceback.format_exc())
+                        st.markdown("<br>", unsafe_allow_html=True)
+
+                        # ── 3 Tabs แยกตามประเภท ──────────────────────────────────────────
+                        _tab_lbl1 = f"🚗 สวมทะเบียนซ้ำ ({len(_rr_clone)})"
+                        _tab_lbl2 = f"🏎️ ขบวนรถซ้ำ ({len(_rr_conv)})"
+                        _tab_lbl3 = f"🔍 ต้องสงสัยซ้ำ ({len(_rr_susp)})"
+                        _rr_t1, _rr_t2, _rr_t3 = st.tabs([_tab_lbl1, _tab_lbl2, _tab_lbl3])
+
+                        def _render_repeat_tab(df_cat, cat_name, cat_color, cat_bg, explanation, risk_logic):
+                            """Render 1 Repeat Offender tab — professional card style"""
+                            if df_cat.empty:
+                                st.info(f"✅ ไม่พบรถ{cat_name}ซ้ำในช่วง 30 วัน")
+                                return
+
+                            # ── คำอธิบายประเภท (Info Box) ───────────────────────────────
+                            st.markdown(f"""
+<div style='background:{cat_bg};border-left:4px solid {cat_color};
+     padding:14px 18px;border-radius:10px;margin-bottom:16px;
+     box-shadow:0 2px 8px rgba(0,0,0,0.3)'>
+  <div style='font-size:13px;font-weight:700;color:{cat_color};margin-bottom:6px'>
+    📌 คำอธิบายประเภท: {cat_name}
+  </div>
+  <div style='font-size:12px;color:#cbd5e1;line-height:1.7'>{explanation}</div>
+  <div style='margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.1);
+       font-size:11px;color:#94a3b8'>
+    <b style='color:#f59e0b'>⚠️ ตรรกะความเสี่ยง:</b> {risk_logic}
+  </div>
+</div>""", unsafe_allow_html=True)
+
+                            # ── ตารางสรุป + export ──────────────────────────────────────
+                            show_cols = ['plate','วันที่พบ','ครั้งแรก','ล่าสุด','คะแนนสูงสุด']
+                            show_cols = [c for c in show_cols if c in df_cat.columns]
+                            disp_df = df_cat[show_cols].rename(columns={
+                                'plate': 'ทะเบียน', 'วันที่พบ': 'วันที่พบ (วัน)',
+                                'คะแนนสูงสุด': 'Score สูงสุด'
+                            })
+                            st.dataframe(disp_df, use_container_width=True, hide_index=True)
+                            excel_download_button(disp_df, f"repeat_{cat_name}.xlsx",
+                                                  f"📥 Export {cat_name} (Excel)")
+                            st.markdown("---")
+
+                            # ── รายละเอียดรายทะเบียน (Professional Card) ────────────────
+                            st.markdown(f"**🔎 รายละเอียดรายทะเบียน — {len(df_cat)} คัน**")
+                            for _, rrow in df_cat.iterrows():
+                                plate_r  = rrow.get('plate', '')
+                                days_r   = rrow.get('วันที่พบ', 0)
+                                first_r  = rrow.get('ครั้งแรก', '-')
+                                last_r   = rrow.get('ล่าสุด', '-')
+                                score_r  = float(rrow.get('คะแนนสูงสุด', 0))
+                                dates_r  = rrow.get('dates_list', []) or []
+                                reason_r = rrow.get('เหตุผลรวม', '-') or '-'
+
+                                # ระดับสี header
+                                if score_r >= 90:
+                                    hdr_color = '#ef4444'; hdr_bg = 'rgba(239,68,68,0.15)'; lvl_icon = '🔴 ระดับวิกฤต'
+                                elif score_r >= 75:
+                                    hdr_color = '#f97316'; hdr_bg = 'rgba(249,115,22,0.15)'; lvl_icon = '🟠 ระดับสูง'
+                                else:
+                                    hdr_color = '#eab308'; hdr_bg = 'rgba(234,179,8,0.15)'; lvl_icon = '🟡 ระดับกลาง'
+
+                                with st.expander(
+                                    f"{'🔴' if score_r>=90 else '🟠' if score_r>=75 else '🟡'} "
+                                    f"{plate_r}  —  พบ {days_r} วัน  |  Score {score_r:.0f}  |  ล่าสุด {last_r}",
+                                    expanded=False
+                                ):
+                                    # ── Header card ─────────────────────────────────────
+                                    st.markdown(f"""
+<div style='background:{hdr_bg};border:1px solid {hdr_color};border-radius:10px;
+     padding:14px 18px;margin-bottom:14px;box-shadow:0 2px 10px rgba(0,0,0,0.3)'>
+  <div style='display:flex;justify-content:space-between;align-items:center'>
+    <span style='font-size:20px;font-weight:800;color:{hdr_color};
+          font-family:monospace;letter-spacing:2px'>{plate_r}</span>
+    <span style='background:{hdr_color};color:#fff;padding:4px 12px;
+          border-radius:20px;font-size:12px;font-weight:600'>{lvl_icon}</span>
+  </div>
+  <div style='font-size:12px;color:#94a3b8;margin-top:4px'>
+    ประเภท: <b style='color:#e2e8f0'>{cat_name}</b>
+    &nbsp;|&nbsp; ตรวจพบ: <b style='color:#e2e8f0'>{days_r} วัน</b>
+    &nbsp;|&nbsp; ช่วง: <b style='color:#e2e8f0'>{first_r}</b> ถึง <b style='color:#e2e8f0'>{last_r}</b>
+  </div>
+</div>""", unsafe_allow_html=True)
+
+                                    # ── 4 Metric boxes ──────────────────────────────────
+                                    mc1, mc2, mc3, mc4 = st.columns(4)
+                                    def _mbox(col, icon, label, val, clr='#3b82f6'):
+                                        col.markdown(f"""
+<div style='background:rgba(15,23,42,0.8);border:1px solid rgba(255,255,255,0.1);
+     border-top:3px solid {clr};border-radius:8px;padding:10px 12px;text-align:center'>
+  <div style='font-size:18px'>{icon}</div>
+  <div style='font-size:10px;color:#94a3b8;margin-top:2px'>{label}</div>
+  <div style='font-size:16px;font-weight:700;color:#f1f5f9;margin-top:4px'>{val}</div>
+</div>""", unsafe_allow_html=True)
+                                    _mbox(mc1, '📅', 'ครั้งแรก',   first_r, '#3b82f6')
+                                    _mbox(mc2, '📅', 'ล่าสุด',     last_r,  '#06b6d4')
+                                    _mbox(mc3, '🔢', 'จำนวนวัน',   f'{days_r} วัน', '#8b5cf6')
+                                    _mbox(mc4, '⚡', 'Risk Score',  f'{score_r:.0f}', hdr_color)
+
+                                    st.markdown("<br>", unsafe_allow_html=True)
+
+                                    # ── Timeline badges ──────────────────────────────────
+                                    if dates_r:
+                                        DAY_COLORS_TL = ['#3b82f6','#ef4444','#22c55e','#f97316',
+                                                         '#8b5cf6','#ec4899','#06b6d4','#dc2626']
+                                        badges = " <span style='color:#64748b;margin:0 4px'>→</span> ".join([
+                                            f"<span style='background:{DAY_COLORS_TL[i%len(DAY_COLORS_TL)]};"
+                                            f"color:#fff;padding:3px 10px;border-radius:12px;"
+                                            f"font-size:12px;font-weight:600'>{d}</span>"
+                                            for i, d in enumerate(dates_r)
+                                        ])
+                                        st.markdown(f"""
+<div style='background:rgba(15,23,42,0.6);border:1px solid rgba(255,255,255,0.08);
+     border-radius:8px;padding:10px 14px;margin-bottom:10px'>
+  <div style='font-size:11px;color:#64748b;margin-bottom:6px;font-weight:600'>
+    📆 TIMELINE การตรวจพบ
+  </div>
+  <div style='line-height:2.2'>{badges}</div>
+</div>""", unsafe_allow_html=True)
+
+                                    # ── เหตุผล / พฤติกรรม ───────────────────────────────
+                                    segs = [s.strip() for s in reason_r.split(' | ') if s.strip() and s.strip() != '-']
+                                    if segs:
+                                        rows_html = "".join([
+                                            f"<div style='display:flex;gap:8px;margin-bottom:6px'>"
+                                            f"<span style='color:#f59e0b;font-size:14px;margin-top:1px'>▶</span>"
+                                            f"<span style='color:#e2e8f0;font-size:12px;line-height:1.5'>{s}</span>"
+                                            f"</div>" for s in segs
+                                        ])
+                                        st.markdown(f"""
+<div style='background:rgba(15,23,42,0.6);border:1px solid rgba(255,255,255,0.08);
+     border-left:3px solid #f59e0b;border-radius:8px;padding:12px 14px;margin-bottom:10px'>
+  <div style='font-size:11px;color:#64748b;margin-bottom:8px;font-weight:600'>
+    💬 พฤติกรรม / เหตุผลที่ตรวจพบ
+  </div>
+  {rows_html}
+</div>""", unsafe_allow_html=True)
+
+                                    # ── คำแนะนำ ─────────────────────────────────────────
+                                    if cat_name == 'สวมทะเบียน':
+                                        rec_icon = '🚨'; rec_color = '#ef4444'
+                                        rec = ("ตรวจสอบกับกรมขนส่งว่าทะเบียนนี้มีรถกี่คัน "
+                                               "ระบุคันที่เป็น 'ต้นแบบ' — หากพบซ้ำ ≥ 3 วันให้ออกหมายเรียกทันที")
+                                    elif cat_name == 'ขบวนรถ':
+                                        rec_icon = '🚛'; rec_color = '#f97316'
+                                        rec = ("ประสานด่านชั่งน้ำหนักและตำรวจทางหลวงตามเส้นทาง "
+                                               "วางแผนสกัดจับ — หากพบซ้ำ ≥ 2 วันในเส้นทางเดิม ให้ตั้งด่านเฉพาะกิจ")
+                                    else:
+                                        rec_icon = '⚠️'; rec_color = '#8b5cf6'
+                                        rec = ("เพิ่มเข้า Watch List และติดตามอย่างต่อเนื่อง "
+                                               "หากพบซ้ำ ≥ 3 วันหรือ Score > 90 ให้ยกระดับเป็นเป้าหมายหลัก")
+                                    st.markdown(f"""
+<div style='background:rgba(15,23,42,0.6);border:1px solid {rec_color};
+     border-radius:8px;padding:12px 14px;margin-bottom:12px'>
+  <div style='font-size:12px;font-weight:700;color:{rec_color};margin-bottom:6px'>
+    {rec_icon} ดำเนินการแนะนำ
+  </div>
+  <div style='font-size:12px;color:#cbd5e1'>{rec}</div>
+</div>""", unsafe_allow_html=True)
+
+                                    # ── ปุ่ม ดูรายละเอียดเต็ม (map + checkbox) ───────────
+                                    st.markdown("---")
+                                    if st.button(f"🗺️ ดูเส้นทาง & รายละเอียดเต็ม: {plate_r}",
+                                                 key=f"btn_dossier_{cat_name}_{plate_r}",
+                                                 use_container_width=True):
+                                        st.session_state[f'show_dossier_{cat_name}_{plate_r}'] = True
+                                    if st.session_state.get(f'show_dossier_{cat_name}_{plate_r}'):
+                                        try:
+                                            _dossier_df = _rt_today_df
+                                        except NameError:
+                                            _dossier_df = pd.DataFrame()
+                                        render_repeat_offender_dossier(
+                                            plate_r, _dossier_df, dates_r
+                                        )
+
+                        with _rr_t1:
+                            _render_repeat_tab(
+                                _rr_clone, 'สวมทะเบียน', '#ef4444', 'rgba(239,68,68,0.1)',
+                                explanation='รถที่ถูก Engine E1 ตรวจจับว่าใช้ทะเบียนเดียวกันปรากฏที่ 2 กล้องพร้อมกัน '
+                                            'หรือเคลื่อนที่เร็วเกินกว่าความเป็นไปได้ทางกายภาพ และเกิดซ้ำ ≥ 2 วัน',
+                                risk_logic='Distance/Time > 250 km/h | หรือปรากฏ 2 จุดพร้อมกัน | '
+                                           'ซ้ำหลายวัน = กลุ่มอาชีพ ไม่ใช่ความผิดพลาดของกล้อง'
+                            )
+                        with _rr_t2:
+                            _render_repeat_tab(
+                                _rr_conv, 'ขบวนรถ', '#f97316', 'rgba(249,115,22,0.1)',
+                                explanation='รถที่ถูก Engine E2 ตรวจจับว่าวิ่งเป็นขบวนพร้อมกับรถอื่น ≥ 3 คัน '
+                                            'ผ่านกล้องชุดเดิมภายใน 10 นาที และพบซ้ำ ≥ 2 วัน',
+                                risk_logic='≥ 3 คันผ่านกล้องชุดเดิมภายใน 10 นาที | '
+                                           'ซ้ำหลายวัน = ขบวนลำเลียงประจำ ไม่ใช่บังเอิญ'
+                            )
+                        with _rr_t3:
+                            _render_repeat_tab(
+                                _rr_susp, 'ต้องสงสัย', '#8b5cf6', 'rgba(139,92,246,0.1)',
+                                explanation='รถที่ถูก Engine E3/E4 ตรวจจับว่ามีพฤติกรรมผิดปกติ เช่น '
+                                            'U-turn ชายแดน, ค้างคืนชายแดน, ออกตีกลับ Zone A ซ้ำ ≥ 2 วัน',
+                                risk_logic='U-turn Zone A ≥ 1 รอบ | หรือ Night Ghost ≥ 3 ครั้ง/วัน | '
+                                           'ซ้ำหลายวัน = แผนปฏิบัติการต่อเนื่อง ไม่ใช่บังเอิญ'
+                            )
+
 
 
                 with tab_daily:
-                    # Load watch list count
+                    # ── Load watch list count ───────────────────────────────────────────────────────────
                     try:
                         _wconn = sqlite3.connect(DB_PATH)
                         _wl_df = pd.read_sql("SELECT plate FROM historical_suspects WHERE seen_count >= 1", _wconn)
@@ -2876,124 +3276,21 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
                         _wconn.close()
                     except: _watch_today = 0
 
+                    # ══ Metric Cards ══
                     col1, col2, col3, col4, col5 = st.columns(5)
                     with col1: st.markdown(f"<div class='metric-card card-apex'><div class='metric-label'>🚨 ระดับสูงสุด</div><div class='metric-value'>{len(apex_df)}</div></div>", unsafe_allow_html=True)
-                    with col2: 
+                    with col2:
                         st.markdown(f"<div class='metric-card card-clone'><div class='metric-label'>🚗 สวมทะเบียน</div><div class='metric-value'>{cat_cloned}</div></div>", unsafe_allow_html=True)
                         if st.button("🔍 เจาะลึก", key="btn_clone_d", use_container_width=True): change_tab("🚨 รถสวมทะเบียน"); st.rerun()
-                    with col3: 
+                    with col3:
                         st.markdown(f"<div class='metric-card card-car'><div class='metric-label'>🏎️ ขบวนรถยนต์</div><div class='metric-value'>{cat_convoy_car}</div></div>", unsafe_allow_html=True)
                         if st.button("🔍 เจาะลึก", key="btn_car_d", use_container_width=True): change_tab("🚘 ขบวนรถลำเลียง"); st.rerun()
-                    with col4: 
+                    with col4:
                         st.markdown(f"<div class='metric-card card-anomaly'><div class='metric-label'>🔄 รถต้องสงสัย</div><div class='metric-value'>{cat_others}</div></div>", unsafe_allow_html=True)
                         if st.button("🔍 เจาะลึก", key="btn_anomaly_d", use_container_width=True): change_tab("🔄 พฤติกรรมมุดชายแดน"); st.rerun()
                     with col5:
                         st.markdown(f"<div class='metric-card card-watch'><div class='metric-label'>⭐ Watch List วันนี้</div><div class='metric-value'>{_watch_today}</div></div>", unsafe_allow_html=True)
                         if st.button("🔍 เจาะลึก", key="btn_watch_d", use_container_width=True): change_tab("⭐ รถที่น่าสนใจ"); st.rerun()
-                        
-                with tab_repeat:
-                    _rep = repeat_offender_analysis(DB_PATH, selected_date, window_days=30, min_days=2)
-
-                    if _rep.empty:
-                        st.info("⚠️ ยังไม่พบทะเบียนที่ปรากฏซ้ำ ≥ 2 วัน ในช่วง 30 วันที่ผ่านมา — ต้องมีข้อมูลอย่างน้อย 2 วันในระบบ")
-                    else:
-                        # ── Summary cards ──────────────────────────────────────
-                        _r_clone  = _rep[_rep['ประเภทหลัก'].str.contains("สวมทะเบียน", na=False)]
-                        _r_convoy = _rep[_rep['ประเภทหลัก'].str.contains("ขบวน", na=False)]
-                        _r_susp   = _rep[~_rep['ประเภทหลัก'].str.contains("สวมทะเบียน|ขบวน", na=False)]
-
-                        rc1, rc2, rc3 = st.columns(3)
-                        with rc1: st.markdown(f"<div class='metric-card card-clone'><div class='metric-label'>🚗 สวมทะเบียนซ้ำ</div><div class='metric-value'>{len(_r_clone)}</div><div style='font-size:11px;color:#94a3b8'>≥2 วัน / 30 วัน</div></div>", unsafe_allow_html=True)
-                        with rc2: st.markdown(f"<div class='metric-card card-car'><div class='metric-label'>🏎️ ขบวนรถซ้ำ</div><div class='metric-value'>{len(_r_convoy)}</div><div style='font-size:11px;color:#94a3b8'>≥2 วัน / 30 วัน</div></div>", unsafe_allow_html=True)
-                        with rc3: st.markdown(f"<div class='metric-card card-anomaly'><div class='metric-label'>🔍 รถต้องสงสัยซ้ำ</div><div class='metric-value'>{len(_r_susp)}</div><div style='font-size:11px;color:#94a3b8'>≥2 วัน / 30 วัน</div></div>", unsafe_allow_html=True)
-
-                        st.markdown("---")
-                        _hist_db = active_db_all if not active_db_all.empty else active_db
-
-                        # ── Helper: province extractor ──────────────────────────
-                        def _get_province(plate_str):
-                            parts = str(plate_str).strip().split()
-                            return parts[-1] if len(parts) >= 2 else '-'
-
-                        def _day_badge(n):
-                            if n >= 10: return "🔴"
-                            elif n >= 5: return "🟠"
-                            elif n >= 3: return "🟡"
-                            return "🟢"
-
-                        # ── Helper: show one group as table ────────────────────
-                        def _show_repeat_table(group_df, tab_key, icon):
-                            if group_df.empty:
-                                st.info("ไม่มีข้อมูลในกลุ่มนี้")
-                                return
-
-                            # โหลด status ทั้งหมดครั้งเดียว
-                            try:
-                                _sc = sqlite3.connect(DB_PATH)
-                                _st_df = pd.read_sql(
-                                    "SELECT plate, status FROM target_status", _sc)
-                                _sc.close()
-                                _st_map = dict(zip(_st_df['plate'], _st_df['status']))
-                            except:
-                                _st_map = {}
-
-                            # หากล้องล่าสุดจาก _hist_db
-                            def _last_cam(plate):
-                                if _hist_db.empty: return '-'
-                                sub = _hist_db[_hist_db['ทะเบียน_Full'] == plate]
-                                if sub.empty: return '-'
-                                return sub.sort_values('Datetime').iloc[-1]['จุดติดตั้งกล้อง']
-
-                            tbl = pd.DataFrame({
-                                'สถานะ': group_df['plate'].apply(
-                                    lambda p: _st_map.get(p, '🔴 เฝ้าระวังใหม่')),
-                                'ทะเบียน': group_df['plate'],
-                                'จำนวนวันที่พบ': group_df['วันที่พบ'].astype(int),
-                                'วันแรกที่พบ': group_df['ครั้งแรก'],
-                                'วันล่าสุดที่พบ': group_df['ล่าสุด'],
-                                'กล้องล่าสุด': group_df['plate'].apply(_last_cam),
-                                'Risk Score': group_df['คะแนนสูงสุด'].astype(int),
-                            })
-
-                            st.caption("คลิกแถวเพื่อดูแผนที่และรายละเอียดด้านล่าง")
-                            event = st.dataframe(
-                                tbl, use_container_width=True, hide_index=True,
-                                on_select="rerun", selection_mode="single-row",
-                                key=f"rep_tbl_{tab_key}"
-                            )
-                            excel_download_button(
-                                tbl, f"repeat_{tab_key}_{selected_date}.xlsx",
-                                "📥 Export ตารางนี้ (Excel)"
-                            )
-
-                            if event.selection.rows:
-                                idx   = event.selection.rows[0]
-                                rrow  = group_df.iloc[idx]
-                                freq  = rrow['วันที่พบ']
-                                score = rrow['คะแนนสูงสุด']
-                                st.markdown("---")
-                                st.markdown(
-                                    f"#### {icon} รายละเอียด: **{rrow['plate']}** "
-                                    f"| พบซ้ำ {freq} วัน | Score {score:.0f}"
-                                )
-                                render_repeat_offender_dossier(
-                                    rrow['plate'], _hist_db, rrow['dates_list']
-                                )
-
-
-                        # ── 3 sub-tabs ──────────────────────────────────────────
-                        rt1, rt2, rt3 = st.tabs([
-                            f"🚗 สวมทะเบียนซ้ำ ({len(_r_clone)})",
-                            f"🏎️ ขบวนรถซ้ำ ({len(_r_convoy)})",
-                            f"🔍 ต้องสงสัยซ้ำ ({len(_r_susp)})",
-                        ])
-                        with rt1:
-                            _show_repeat_table(_r_clone.reset_index(drop=True),  "clone",  "🚗")
-                        with rt2:
-                            _show_repeat_table(_r_convoy.reset_index(drop=True), "convoy", "🏎️")
-                        with rt3:
-                            _show_repeat_table(_r_susp.reset_index(drop=True),   "susp",   "🔍")
-
 
 
 

@@ -7,7 +7,7 @@ import os
 import re
 import time
 import sqlite3
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from folium import plugins
 from folium.plugins import MarkerCluster, HeatMap
 import streamlit.components.v1 as components
@@ -44,10 +44,47 @@ except ImportError:
 # ==========================================
 st.set_page_config(page_title="HWPD 60 i-Trap Command Center", layout="wide", page_icon="🛡️", initial_sidebar_state="expanded")
 
-DB_PATH = "hwpd_master_database.db"
-PARQUET_PATH = "hwpd_master_data.parquet"
+import os as _os
+DATA_DIR     = r"D:\itrap_agent"
+DB_PATH      = _os.path.join(DATA_DIR, "hwpd_master_database.db")
+PARQUET_PATH = _os.path.join(DATA_DIR, "hwpd_master_data.parquet")
 
-BORDER_PROVINCES = {'หนองคาย', 'บึงกาฬ', 'นครพนม', 'มุกดาหาร', 'อำนาจเจริญ', 'อุบลราชธานี', 'ศรีสะเกษ', 'สุรินทร์', 'บุรีรัมย์', 'สระแก้ว', 'จันทบุรี', 'ตราด', 'เลย', 'อุดรธานี'}
+BORDER_PROVINCES = {
+    # ── ชายแดนพม่า (Myanmar) ──────────────────────────────────────────────
+    'เชียงราย',      # แม่สาย, เชียงแสน, เชียงของ
+    'เชียงใหม่',     # ใกล้พม่า อ.ฝาง
+    'แม่ฮ่องสอน',   # พรมแดนพม่าทั้งจังหวัด
+    'ตาก',           # แม่สอด, แม่ระมาด, ท่าสองยาง
+    'กาญจนบุรี',    # เจดีย์สามองค์, พุน้ำร้อน
+    'ราชบุรี',       # ใกล้ชายแดนพม่าตอนใต้
+    'ประจวบคีรีขันธ์', # ด่านสิงขร
+    'ระนอง',        # ด่านระนอง-เกาะสอง
+    'ชุมพร',        # ใกล้ระนอง
+    # ── ชายแดนลาว (Laos) ─────────────────────────────────────────────────
+    'เลย',           # ท่าลี่, เชียงคาน
+    'หนองคาย',      # ด่านสะพานมิตรภาพ 1
+    'บึงกาฬ',       # ด่านบึงกาฬ
+    'นครพนม',       # สะพานมิตรภาพ 3
+    'มุกดาหาร',     # สะพานมิตรภาพ 2
+    'อำนาจเจริญ',   # ใกล้ลาว
+    'อุบลราชธานี',  # ช่องเม็ก, วังตาล
+    'อุดรธานี',     # ใกล้หนองคาย
+    'น่าน',          # ชายแดนลาวตอนบน
+    'พะเยา',        # ใกล้น่าน-ลาว
+    # ── ชายแดนกัมพูชา (Cambodia) ─────────────────────────────────────────
+    'ศรีสะเกษ',     # ช่องสะงำ, ภูมิสรอล
+    'สุรินทร์',      # ช่องจอม, ด่านจอม
+    'บุรีรัมย์',    # ช่องจอม
+    'สระแก้ว',      # อรัญประเทศ, บ้านคลองลึก
+    'จันทบุรี',      # บ้านปากาด, บ้านผักกาด
+    'ตราด',          # หาดเล็ก, บ้านใหม่
+    # ── ชายแดนมาเลเซีย (Malaysia) ────────────────────────────────────────
+    'สงขลา',        # สะเดา, บ้านประกอบ
+    'สตูล',          # วังประจัน, บ้านประกอบ
+    'ยะลา',          # เบตง
+    'นราธิวาส',     # สุไหงโกลก, ตากใบ, บ้านบูเก๊ะตา
+    'ปัตตานี',      # ใกล้ชายแดน
+}
 
 # ── Helper: Export Excel ────────────────────────────────────────────────
 def excel_download_button(df: pd.DataFrame, filename: str, label: str = "📥 Export Excel"):
@@ -888,8 +925,8 @@ def save_to_memory(new_df_pl, current_db_pl, cloud_db_pl=None):
     combined = pl.concat(sources, how="vertical_relaxed") if len(sources) > 1 else new_df_pl
     combined = combined.unique(subset=["ทะเบียน_Full", "Datetime", "จุดติดตั้งกล้อง"], keep="first")
 
-    thirty_days_ago = datetime.now() - timedelta(days=30)
-    combined = combined.filter(pl.col("Datetime") >= thirty_days_ago)
+    sixty_days_ago = datetime.now() - timedelta(days=60)  # เก็บข้อมูลย้อนหลัง 60 วัน
+    combined = combined.filter(pl.col("Datetime") >= sixty_days_ago)
 
     combined.write_parquet(PARQUET_PATH, compression="zstd")
     return combined
@@ -1110,7 +1147,43 @@ def process_raw_data_polars(df_pd):
         Speed_kmh=pl.when(pl.col('time_diff_hr') > 0).then(pl.col('dist_km') / pl.col('time_diff_hr')).otherwise(0.0)
     )
     
-    BORDER_ANCHORS = [(17.88, 102.75), (18.36, 103.65), (17.40, 104.78), (16.54, 104.73), (15.11, 105.47), (14.35, 104.05), (14.41, 103.85), (14.34, 103.22)]
+    BORDER_ANCHORS = [
+        # ── พม่า (Myanmar) ──────────────────────────────────────────
+        (20.42, 99.88),   # แม่สาย เชียงราย
+        (20.27, 100.08),  # เชียงแสน เชียงราย
+        (19.30, 97.97),   # แม่ฮ่องสอน (เมือง)
+        (18.52, 97.59),   # ปาย แม่ฮ่องสอน
+        (16.72, 98.57),   # แม่สอด ตาก ★ ด่านหลัก
+        (16.98, 98.51),   # แม่ระมาด ตาก
+        (17.57, 98.14),   # ท่าสองยาง ตาก
+        (15.32, 98.40),   # เจดีย์สามองค์ กาญจนบุรี ★ ด่านหลัก
+        (15.22, 98.33),   # พุน้ำร้อน กาญจนบุรี
+        (11.80, 99.43),   # สิงขร ประจวบคีรีขันธ์
+        ( 9.97, 98.60),   # ระนอง ★ ด่านหลัก
+        # ── ลาว (Laos) ──────────────────────────────────────────────
+        (20.26, 100.40),  # เชียงของ เชียงราย ★ สะพานมิตรภาพ 4
+        (17.87, 101.43),  # ท่าลี่ เลย
+        (17.88, 102.75),  # หนองคาย ★ สะพานมิตรภาพ 1
+        (18.36, 103.65),  # บึงกาฬ ★ ด่านบึงกาฬ
+        (17.40, 104.78),  # นครพนม ★ สะพานมิตรภาพ 3
+        (16.54, 104.73),  # มุกดาหาร ★ สะพานมิตรภาพ 2
+        (15.20, 105.54),  # ช่องเม็ก อุบลราชธานี ★ ด่านหลัก
+        (17.00, 102.10),  # เวียงจันทน์ฝั่งไทย (ท่าบก)
+        # ── กัมพูชา (Cambodia) ──────────────────────────────────────
+        (14.38, 103.72),  # ช่องจอม สุรินทร์ ★ ด่านหลัก
+        (14.02, 104.13),  # ช่องสะงำ ศรีสะเกษ
+        (14.61, 102.98),  # บุรีรัมย์ (ช่อง)
+        (13.69, 102.52),  # อรัญประเทศ สระแก้ว ★ ด่านหลัก
+        (13.32, 102.53),  # บ้านคลองลึก สระแก้ว
+        (12.53, 102.57),  # บ้านปากาด จันทบุรี ★ ด่านหลัก
+        (11.66, 102.91),  # หาดเล็ก ตราด ★ ด่านหลัก
+        # ── มาเลเซีย (Malaysia) ─────────────────────────────────────
+        ( 6.64, 100.43),  # สะเดา สงขลา ★ ด่านหลัก
+        ( 6.69, 100.27),  # วังประจัน สตูล
+        ( 5.78, 101.08),  # เบตง ยะลา ★ ด่านหลัก
+        ( 6.03, 101.97),  # สุไหงโกลก นราธิวาส ★ ด่านหลัก
+        ( 6.26, 102.07),  # ตากใบ นราธิวาส
+    ]
     _BA = np.array(BORDER_ANCHORS)  # shape (8, 2)
     _ba_lats_r = np.radians(_BA[:, 0])
     _ba_lons_r = np.radians(_BA[:, 1])
@@ -1151,12 +1224,46 @@ def run_intelligence_orchestrator(active_db_pl,
     
     if not active_db.empty and 'ทะเบียน_Full' in active_db.columns:
         active_db = active_db[~active_db['ทะเบียน_Full'].isin(whitelist_plates)]
-        
-        def get_direction(cam):
-            if 'เข้า' in str(cam): return 'เข้า'
-            if 'out' in str(cam) or 'ออก' in str(cam): return 'ออก'
+
+        # ── Smart Direction Inference ─────────────────────────────────────────
+        # ขั้น 1: อ่านจากชื่อกล้อง (ถ้ากล้องระบุไว้)
+        def get_direction_from_name(cam):
+            cam_str = str(cam)
+            if 'เข้า' in cam_str: return 'เข้า'
+            if 'out' in cam_str.lower() or 'ออก' in cam_str: return 'ออก'
             return 'ไม่ระบุ'
-        active_db['Direction'] = active_db['จุดติดตั้งกล้อง'].apply(get_direction)
+        active_db['Direction'] = active_db['จุดติดตั้งกล้อง'].apply(get_direction_from_name)
+
+        # ขั้น 2: กล้องที่ 'ไม่ระบุ' — ใช้ลำดับเวลา + พิกัดภูมิศาสตร์วิเคราะห์
+        # หลักการ: ถ้ารถเคลื่อนที่จากทิศใต้→เหนือ (lat เพิ่ม) = 'เข้า' พื้นที่ภายใน
+        # อ้างอิงจากพิกัดชายแดนลาว/กัมพูชา (เหนือ=ชายแดน, ใต้=ในประเทศ)
+        if 'ละติจูด' in active_db.columns and 'ลองจิจูด' in active_db.columns:
+            try:
+                _no_dir = active_db['Direction'] == 'ไม่ระบุ'
+                if _no_dir.any():
+                    _sorted = active_db.sort_values(['ทะเบียน_Full', 'Datetime'])
+                    _sorted['_prev_lat'] = _sorted.groupby('ทะเบียน_Full')['ละติจูด'].shift(1)
+                    _sorted['_prev_lon'] = _sorted.groupby('ทะเบียน_Full')['ลองจิจูด'].shift(1)
+                    _sorted['_dlat'] = _sorted['ละติจูด'] - _sorted['_prev_lat']
+                    _sorted['_dlon'] = _sorted['ลองจิจูด'] - _sorted['_prev_lon']
+
+                    def _infer_dir(row):
+                        if row['Direction'] != 'ไม่ระบุ': return row['Direction']
+                        if pd.isna(row.get('_dlat')): return 'ไม่ระบุ'
+                        if abs(row['_dlat']) < 0.005 and abs(row['_dlon']) < 0.005:
+                            return 'ไม่ระบุ'
+                        if abs(row['_dlat']) >= abs(row['_dlon']):
+                            return 'เข้า' if row['_dlat'] > 0 else 'ออก'
+                        else:
+                            return 'เข้า' if row['_dlon'] > 0 else 'ออก'
+
+                    _inferred = _sorted.apply(_infer_dir, axis=1)
+                    active_db = _sorted.copy()
+                    active_db['Direction'] = _inferred
+                    active_db = active_db.drop(columns=['_prev_lat','_prev_lon','_dlat','_dlon'], errors='ignore')
+            except Exception:
+                pass  # fallback: ใช้ค่าเดิม 'ไม่ระบุ'
+        # ────────────────────────────────────────────────────────────────────
     
     engine_results = defaultdict(lambda: {"engines": set(), "reasons": [], "cars": set(), "score": 0, "type": "", "radar": {}, "cams": "-", "gap": "-"})
     
@@ -1166,7 +1273,7 @@ def run_intelligence_orchestrator(active_db_pl,
     if not active_db.empty and 'Speed_kmh' in active_db.columns:
         # E1 ตะแกรง 3 เงื่อนไข (UK NADC + Interpol standard):
         e1_speed_mask   = (active_db['Speed_kmh'] > 250) & (active_db['dist_km'] >= 60)     # UK NADC: ≥ 250 km/h
-        e1_paradox_mask = (active_db['time_diff_hr'] == 0) & (active_db['dist_km'] >= 100)  # พร้อมกัน 2 กล้อง ≥ 100 km
+        e1_paradox_mask = (active_db['time_diff_hr'] < (1/60)) & (active_db['dist_km'] >= 100)  # พร้อมกัน 2 กล้อง ≥ 100 km
         e1_sameregion   = (active_db['time_diff_hr'] <= 1.0) & (active_db['dist_km'] >= 200) # Interpol: 1 ชม. ≥ 200 km
         _cam_diff = active_db['จุดติดตั้งกล้อง'] != active_db['prev_cam']
         e1_mask   = (e1_speed_mask | e1_paradox_mask | e1_sameregion) & _cam_diff
@@ -1232,7 +1339,9 @@ def run_intelligence_orchestrator(active_db_pl,
                         
         adj_car = defaultdict(set)
         for pair, cams in pair_cams_car.items():
-            if len(cams) >= e2_shared:  # ผ่านร่วมกัน >= e2_shared ด่าน
+            # ★ อนุญาตขาด 1 กล้อง: ถ้าผ่านร่วมกัน ≥ e2_shared-1 ด่าน ยังนับเป็นคู่ขบวนได้
+            # Gap Penalty (×0.9) จะลดคะแนนอัตโนมัติอยู่แล้ว
+            if len(cams) >= max(2, e2_shared - 1):  # ผ่านร่วมกัน ≥ e2_shared-1 ด่าน (ยอมรับขาด 1)
                 adj_car[pair[0]].add(pair[1])
                 adj_car[pair[1]].add(pair[0])
                 
@@ -1259,7 +1368,7 @@ def run_intelligence_orchestrator(active_db_pl,
                                 is_valid = False
                                 break
                             cams_passed.add(cam)
-                    if is_valid and len(cams_passed) >= e2_shared:  # ต้องผ่านร่วมกัน ≥ e2_shared ด่าน
+                    if is_valid and len(cams_passed) >= max(2, e2_shared - 1):  # ★ ยอมรับขาด 1 กล้อง
                         gap_val = df_target.groupby('จุดติดตั้งกล้อง').apply(lambda x: (x['Datetime'].max() - x['Datetime'].min()).total_seconds()).mean()
                         convoys_car.append({'cars': comp_list, 'cams': len(cams_passed),
                                              'gap': gap_val, 'shared_cams': cams_passed})
@@ -1460,6 +1569,21 @@ def run_intelligence_orchestrator(active_db_pl,
                     is_drop_pick = True
                     _uturn_count += 1
 
+            # ── Overnight U-turn (4-12 ชม.) Zone A — DEA/Europol FRONTEX ──
+            _is_overnight_uturn = False
+            _overnight_count    = 0
+            overnight_indices = np.where((time_diffs >= 4.0) & (time_diffs <= 12.0))[0]
+            for idx in overnight_indices:
+                if idx >= len(df_target): continue
+                zb = df_target['Zone'].iloc[idx-1]
+                za = df_target['Zone'].iloc[idx]
+                db_dir = df_target['Direction'].iloc[idx-1]
+                da_dir = df_target['Direction'].iloc[idx]
+                if zb == 'A' and za == 'A' and db_dir == 'ออก' and da_dir == 'เข้า':
+                    _is_overnight_uturn = True
+                    _overnight_count   += 1
+                    is_drop_pick = True
+
             if not is_drop_pick: continue   # ถ้าไม่ใช่ U-turn Zone-A จริง → เตะทิ้ง
 
             is_evasion = False
@@ -1479,6 +1603,15 @@ def run_intelligence_orchestrator(active_db_pl,
                           else "ตีวงกลับโฉบรับ/ส่งชายแดน")
             compound_triggers.append(f"{_uturn_txt} (ออก Zone A → แช่ 1-4 ชม. → เข้า Zone A)")
             base_score += 20
+
+            # Trigger 1c: Overnight U-turn — DEA/Europol FRONTEX
+            if _is_overnight_uturn:
+                _ov_txt = (f"ค้างคืน {_overnight_count} รอบ" if _overnight_count > 1 else "ค้างคืนชายแดน")
+                compound_triggers.append(
+                    f"Overnight Border Stay: {_ov_txt} (ออก Zone A → ค้าง 4-12 ชม. → เข้า Zone A) "
+                    f"— รับ/ส่งสินค้าข้ามคืน [DEA/Europol FRONTEX]"
+                )
+                base_score += 20
 
             # Trigger 1b: Repeat Offender — DEA/ปปส. standard: ยิ่งซ้ำหลายวัน ยิ่งอันตราย
             if unique_days >= 3:
@@ -1539,7 +1672,12 @@ def run_intelligence_orchestrator(active_db_pl,
             _e4_total_counts = active_db.groupby('ทะเบียน_Full').size()
             _e4_border_cams  = border_night.groupby('ทะเบียน_Full')['จุดติดตั้งกล้อง'].nunique()
 
-            _e4_candidates = _e4_night_counts[_e4_night_counts >= 3].index
+            _e4_night_counts = _e4_night_counts[_e4_night_counts >= 3]
+            _e4_unique_days = border_night.groupby('ทะเบียน_Full')['Datetime'].apply(
+                lambda x: x.dt.date.nunique())
+            _e4_night_counts = _e4_night_counts[
+                _e4_night_counts.index.map(lambda p: _e4_unique_days.get(p, 1) >= 2)]
+            _e4_candidates = _e4_night_counts.index
 
             for plate in _e4_candidates:
                 if plate in e1_plates: continue
@@ -1639,7 +1777,9 @@ def run_intelligence_orchestrator(active_db_pl,
                 "พฤติกรรมต้องสงสัย": " | ".join(data["reasons"]),
                 "ผ่านร่วมกัน (ด่าน)": data["cams"],
                 "ระยะห่างเฉลี่ย": data["gap"], 
-                "Risk Score": min(100, int(data["score"] * 1.15) if is_apex else data["score"]),
+                "Risk Score": min(100, data["score"]),
+            "Apex_Flag": "👑 APEX" if is_apex else "",
+            "Apex_Boost": f"+{int(data['score'] * 0.15)}" if is_apex else "0",
                 "จุดตรวจพบล่าสุด": f"📍 {last_row['จุดติดตั้งกล้อง']}", 
                 "เวลาโผล่ล่าสุด": str(last_row['เวลา']),
                 "Cars_List": [str(c) for c in data["cars"]],
@@ -3058,7 +3198,8 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
                 cum30_apex, cum30_clone, cum30_car, cum30_other = calc_cum(mask_30)
 
                 st.markdown("### 📊 ข้อมูลสรุปเป้าหมายสำคัญ (Intelligence Brief)")
-                _today_str = datetime.now().strftime('%Y-%m-%d')
+                _tz_th     = timezone(timedelta(hours=7))  # Bangkok UTC+7
+                _today_str = datetime.now(_tz_th).strftime('%Y-%m-%d')  # ★ sync กับเวลาไทยบน Cloud
                 _sel_str   = str(selected_date)[:10]
 
                 if _sel_str == _today_str:
@@ -3130,20 +3271,30 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
                         _wconn.close()
                     except: _watch_today = 0
 
+                    # ── CSS: ทำปุ่มเจาะลึกขนาด auto + center ──────────────
+                    st.markdown("""
+<style>
+div[data-testid="stButton"]:has(button[kind="secondary"]) button {
+    padding: 4px 16px !important; font-size: 12px !important;
+    border-radius: 20px !important; min-width: 80px !important;
+    width: auto !important; display: block; margin: 4px auto 0 auto;
+}
+</style>""", unsafe_allow_html=True)
                     col1, col2, col3, col4, col5 = st.columns(5)
-                    with col1: st.markdown(f"<div class='metric-card card-apex'><div class='metric-label'>🚨 ระดับสูงสุด</div><div class='metric-value'>{len(apex_df)}</div></div>", unsafe_allow_html=True)
-                    with col2: 
+                    with col1:
+                        st.markdown(f"<div class='metric-card card-apex'><div class='metric-label'>🚨 ระดับสูงสุด</div><div class='metric-value'>{len(apex_df)}</div></div>", unsafe_allow_html=True)
+                    with col2:
                         st.markdown(f"<div class='metric-card card-clone'><div class='metric-label'>🚗 สวมทะเบียน</div><div class='metric-value'>{cat_cloned}</div></div>", unsafe_allow_html=True)
-                        if st.button("🔍 เจาะลึก", key="btn_clone_d", use_container_width=True): change_tab("🚨 รถสวมทะเบียน"); st.rerun()
-                    with col3: 
+                        if st.button("🔍 เจาะลึก", key="btn_clone_d"): change_tab("🚨 รถสวมทะเบียน"); st.rerun()
+                    with col3:
                         st.markdown(f"<div class='metric-card card-car'><div class='metric-label'>🏎️ ขบวนรถยนต์</div><div class='metric-value'>{cat_convoy_car}</div></div>", unsafe_allow_html=True)
-                        if st.button("🔍 เจาะลึก", key="btn_car_d", use_container_width=True): change_tab("🚘 ขบวนรถลำเลียง"); st.rerun()
-                    with col4: 
+                        if st.button("🔍 เจาะลึก", key="btn_car_d"): change_tab("🚘 ขบวนรถลำเลียง"); st.rerun()
+                    with col4:
                         st.markdown(f"<div class='metric-card card-anomaly'><div class='metric-label'>🔄 รถต้องสงสัย</div><div class='metric-value'>{cat_others}</div></div>", unsafe_allow_html=True)
-                        if st.button("🔍 เจาะลึก", key="btn_anomaly_d", use_container_width=True): change_tab("🔄 พฤติกรรมมุดชายแดน"); st.rerun()
+                        if st.button("🔍 เจาะลึก", key="btn_anomaly_d"): change_tab("🔄 พฤติกรรมมุดชายแดน"); st.rerun()
                     with col5:
                         st.markdown(f"<div class='metric-card card-watch'><div class='metric-label'>⭐ Watch List วันนี้</div><div class='metric-value'>{_watch_today}</div></div>", unsafe_allow_html=True)
-                        if st.button("🔍 เจาะลึก", key="btn_watch_d", use_container_width=True): change_tab("⭐ รถที่น่าสนใจ"); st.rerun()
+                        if st.button("🔍 เจาะลึก", key="btn_watch_d"): change_tab("⭐ รถที่น่าสนใจ"); st.rerun()
                         
                 with tab_repeat:
                     if _sel_str != _today_str:
