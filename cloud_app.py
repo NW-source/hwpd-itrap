@@ -1527,6 +1527,7 @@ def run_intelligence_orchestrator(active_db_pl,
 
             group_id = f"Group_Car_{lead_car}"
             for c in cv['cars']: engine_results[group_id]["cars"].add(c)
+            engine_results[group_id]["lead_car"] = str(lead_car)  # ★ เก็บ lead_car ไว้ใน data โดยตรง
             engine_results[group_id]["engines"].add("E2_Car")
             engine_results[group_id]["reasons"].append(" | ".join(compound_reasons))
             engine_results[group_id]["score"] = max(engine_results[group_id]["score"], min(100, base_convoy_score))
@@ -1805,20 +1806,26 @@ def run_intelligence_orchestrator(active_db_pl,
             if target_cars_df.empty: continue 
             
             last_row = target_cars_df.iloc[-1]
-            
+
+            # ★ เรียง Cars_List: lead_car อยู่ index 0 เสมอ (แก้ bug set() ไม่มี order)
+            _all_cars_str = [str(c) for c in data["cars"]]
+            _lead_str = data.get("lead_car")
+            if _lead_str and _lead_str in _all_cars_str:
+                _all_cars_str = [_lead_str] + [c for c in _all_cars_str if c != _lead_str]
+
             priority_list.append({
                 "Target_ID": target_id,
-                "เป้าหมาย": " / ".join(str(c) for c in data["cars"]),
+                "เป้าหมาย": " / ".join(_all_cars_str),
                 "ประเภท": final_type,
                 "พฤติกรรมต้องสงสัย": " | ".join(data["reasons"]),
                 "ผ่านร่วมกัน (ด่าน)": data["cams"],
-                "ระยะห่างเฉลี่ย": data["gap"], 
+                "ระยะห่างเฉลี่ย": data["gap"],
                 "Risk Score": min(100, data["score"]),
             "Apex_Flag": "👑 APEX" if is_apex else "",
             "Apex_Boost": f"+{int(data['score'] * 0.15)}" if is_apex else "0",
-                "จุดตรวจพบล่าสุด": f"📍 {last_row['จุดติดตั้งกล้อง']}", 
+                "จุดตรวจพบล่าสุด": f"📍 {last_row['จุดติดตั้งกล้อง']}",
                 "เวลาโผล่ล่าสุด": str(last_row['เวลา']),
-                "Cars_List": [str(c) for c in data["cars"]],
+                "Cars_List": _all_cars_str,
                 "Radar_Data": data["radar"],
                 "Speed_Warp": data.get("speed_warp", "-"),
                 "Total_Dist": f"{data.get('total_dist', 0):.1f}" if ("E3" in data["engines"] or "E2_Car" in data["engines"]) else "-"
