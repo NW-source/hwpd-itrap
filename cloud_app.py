@@ -2010,8 +2010,8 @@ def repeat_offender_analysis(reports_df, reference_date, window_days=30, min_day
                 def _vp(s):
                     for pt in str(s).split('/'):
                         pt = pt.strip()
-                        if _re_plt.search(r'[ก-ฮ]\d', pt): return True
-                        if _re_plt.match(r'^[1-9]\d{5}', pt): return True
+                        if _re_plt.search(r'[ก-ฮ]\d', pt) and _re_plt.search(r'\d[ก-ฮ]', pt): return True
+                        if _re_plt.match(r'^[1-9]\d{5}[ก-ฮ]', pt): return True
                     return False
                 def _fp(s):
                     parts = []
@@ -2032,8 +2032,11 @@ def repeat_offender_analysis(reports_df, reference_date, window_days=30, min_day
                 except: score_val = 0
                 if score_val < 80: continue
                 for plate in row.get('Cars_List', []):
+                    ps = str(plate).strip()
+                    if not ((_re_plt.search(r'[ก-ฮ]\d', ps) and _re_plt.search(r'\d[ก-ฮ]', ps)) or _re_plt.match(r'^[1-9]\d{5}[ก-ฮ]', ps)): continue
+                    ps = _fp(ps)
                     records.append({
-                        'plate': str(plate),
+                        'plate': ps,
                         'ประเภท': row.get('ประเภท', ''),
                         'score': score_val,
                         'report_date': report_date,
@@ -3136,8 +3139,8 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
                             def _valid_priority_plate(target_str):
                                 for part in str(target_str).split('/'):
                                     part = part.strip()
-                                    if _re.search(r'[ก-ฮ]\d', part): return True
-                                    if _re.match(r'^[1-9]\d{5}', part): return True
+                                    if _re.search(r'[ก-ฮ]\d', part) and _re.search(r'\d[ก-ฮ]', part): return True
+                                    if _re.match(r'^[1-9]\d{5}[ก-ฮ]', part): return True
                                 return False
                             def _fmt_priority_plate(target_str):
                                 parts = []

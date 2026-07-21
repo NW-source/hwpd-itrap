@@ -1901,19 +1901,29 @@ def repeat_offender_analysis(db_path, reference_date, window_days=30, min_days=3
 
     records = []
     import re as _re_plate
-    def _valid_plt(s):
+    def _valid_pl(s):
+        """ทะเบียนสมบูรณ์ = มีหมวดอักษร/ตัวเลข + จังหวัด ครบ"""
         for p in str(s).split('/'):
             p = p.strip()
-            if _re_plate.search(r'[ก-ฮ]\d', p): return True
-            if _re_plate.match(r'^[1-9]\d{5}', p): return True
+            # รถยนต์: [ก-ฮ]ตามตัวเลข AND ตัวเลขตาม[ก-ฮ] (มีจังหวัดเริ่มด้วยอักษรไทย)
+            if _re_plate.search(r'[ก-ฮ]\d', p) and _re_plate.search(r'\d[ก-ฮ]', p):
+                return True
+            # รถบรรทุก: 6หลักตามด้วยจังหวัด
+            if _re_plate.match(r'^[1-9]\d{5}[ก-ฮ]', p):
+                return True
+        return False
+    def _valid_car(p):
+        """validate ทะเบียนเดี่ยว (Cars_List)"""
+        p = str(p).strip()
+        if _re_plate.search(r'[ก-ฮ]\d', p) and _re_plate.search(r'\d[ก-ฮ]', p): return True
+        if _re_plate.match(r'^[1-9]\d{5}[ก-ฮ]', p): return True
         return False
     def _fmt_plate(s):
-        """เพิ่มวรรคใน plate+province string: วสผล532กรุงเทพ → วสผล 532 กรุงเทพ"""
         parts = []
         for part in str(s).split('/'):
             part = part.strip()
-            part = _re_plate.sub(r'([ก-ฮ])(\d)', lambda m: m.group(1)+' '+m.group(2), part)
-            part = _re_plate.sub(r'(\d)([ก-ฮ])', lambda m: m.group(1)+' '+m.group(2), part)
+            part = _re_plate.sub(r'([ก-ฮ])(\d)', r'\1 \2', part)
+            part = _re_plate.sub(r'(\d)([ก-ฮ])', r'\1 \2', part)
             part = _re_plate.sub(r' +', ' ', part).strip()
             parts.append(part)
         return ' / '.join(parts)
@@ -1922,7 +1932,7 @@ def repeat_offender_analysis(db_path, reference_date, window_days=30, min_days=3
             pdf = pd.DataFrame(json.loads(priority_data))
             if pdf.empty: continue
             if 'เป้าหมาย' in pdf.columns:
-                pdf = pdf[pdf['เป้าหมาย'].apply(_valid_plt)].reset_index(drop=True)
+                pdf = pdf[pdf['เป้าหมาย'].apply(_valid_pl)].reset_index(drop=True)
                 pdf['เป้าหมาย'] = pdf['เป้าหมาย'].apply(_fmt_plate)
             if pdf.empty: continue
             for _, row in pdf.iterrows():
@@ -1931,8 +1941,11 @@ def repeat_offender_analysis(db_path, reference_date, window_days=30, min_days=3
                 except: score_val = 0
                 if score_val < 80: continue
                 for plate in row.get('Cars_List', []):
+                    plate_str = str(plate).strip()
+                    if not _valid_car(plate_str): continue  # ★ filter
+                    plate_str = _fmt_plate(plate_str)         # ★ format
                     records.append({
-                        'plate': str(plate),
+                        'plate': plate_str,
                         'ประเภท': row.get('ประเภท', ''),
                         'score': score_val,
                         'report_date': report_date,
@@ -2500,11 +2513,35 @@ def show_clickable_table(df_display, table_key, active_db, priority_df):
     if df_display.empty:
         st.info("🟢 ไม่พบเป้าหมายที่อยู่ในเกณฑ์เฝ้าระวัง")
         return
-        
+
     conn = sqlite3.connect(DB_PATH)
     status_df = pd.read_sql("SELECT Target_ID, status FROM target_status", conn)
     conn.close()
     
+    # ★ Filter + Format DLT: ต้องมีจังหวัดครบจึงผ่าน
+    if not priority_df.empty and 'เป้าหมาย' in priority_df.columns:
+        import re as _re
+        def _valid_priority_plate(target_str):
+            for part in str(target_str).split('/'):
+                part = part.strip()
+                # รถยนต์: [ก-ฮ]\d AND \d[ก-ฮ] = มีทั้งหมวดและจังหวัด
+                if _re.search(r'[ก-ฮ]\d', part) and _re.search(r'\d[ก-ฮ]', part): return True
+                # รถบรรทุก: 6หลักพอดีตามด้วยจังหวัด
+                if _re.match(r'^[1-9]\d{5}[ก-ฮ]', part): return True
+            return False
+        def _fmt_priority_plate(target_str):
+            parts = []
+            for part in str(target_str).split('/'):
+                part = part.strip()
+                part = _re.sub(r'([ก-ฮ])(\d)', r'\1 \2', part)
+                part = _re.sub(r'(\d)([ก-ฮ])', r'\1 \2', part)
+                part = _re.sub(r' +', ' ', part).strip()
+                parts.append(part)
+            return ' / '.join(parts)
+        priority_df = priority_df[priority_df['เป้าหมาย'].apply(_valid_priority_plate)].reset_index(drop=True)
+        if not priority_df.empty:
+            priority_df['เป้าหมาย'] = priority_df['เป้าหมาย'].apply(_fmt_priority_plate)
+            
     df_clean = df_display.copy()
     if not status_df.empty:
         df_clean = df_clean.merge(status_df, on='Target_ID', how='left')
@@ -2982,8 +3019,8 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
                     def _valid_priority_plate(target_str):
                         for part in str(target_str).split('/'):
                             part = part.strip()
-                            if _re.search(r'[ก-ฮ]\d', part): return True
-                            if _re.match(r'^[1-9]\d{5}', part): return True
+                            if _re.search(r'[ก-ฮ]\d', part) and _re.search(r'\d[ก-ฮ]', part): return True
+                            if _re.match(r'^[1-9]\d{5}[ก-ฮ]', part): return True
                         return False
                     def _fmt_priority_plate(target_str):
                         """เพิ่มวรรคใน plate: 702462กรุงเทพ→702462 กรุงเทพ, วสผล532กรุงเทพ→วสผล 532 กรุงเทพ"""
