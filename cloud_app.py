@@ -253,6 +253,7 @@ def save_realtime_session(active_db_pd: pd.DataFrame, session_date: str):
         conn.commit(); conn.close()
     except: pass
 
+@st.cache_data(ttl=1800, show_spinner=False)  # cache 30 นาที — ลด Supabase Egress
 def load_realtime_session(session_date: str):
     if not is_supabase_configured():
         return None
@@ -3193,10 +3194,13 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
                 except Exception as e:
                     st.error(f"⚠️ Error loading report: {e}")
                 
-                # 3. Pull Parquet Data for maps & dossier
-                from supabase_sync import pull_parquet_from_cloud
-                historical_db_pl = pull_parquet_from_cloud(selected_date)
-                if historical_db_pl is None: historical_db_pl = pl.DataFrame()
+                # 3. Pull Parquet Data for maps & dossier (cached 30 min ลด egress)
+                @st.cache_data(ttl=1800, show_spinner=False)
+                def _cached_parquet(date: str):
+                    from supabase_sync import pull_parquet_from_cloud as _ppc
+                    result = _ppc(date)
+                    return result if result is not None else pl.DataFrame()
+                historical_db_pl = _cached_parquet(selected_date)
                 
         if not historical_db_pl.is_empty():
             active_db_all = historical_db_pl.to_pandas()
