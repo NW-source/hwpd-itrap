@@ -1133,12 +1133,12 @@ def process_raw_data_polars(df_pd):
     df_pd['จังหวัด'] = df_pd['จังหวัด'].fillna('').astype(str).str.strip().str.replace('None', '').str.replace('nan', '')
     df_pd = df_pd.dropna(subset=['ทะเบียนรถ'])
 
-    # ★ Filter: ตัดทะเบียนไม่สมบูรณ์ — ต้องมีหมวดตัวอักษร + หมวดตัวเลข + จังหวัด ครบ
-    _plate_has_thai   = df_pd['ทะเบียนรถ'].str.contains(r'[ก-ฮ]', regex=True, na=False)
-    _plate_is_truck   = df_pd['ทะเบียนรถ'].str.match(r'^[789]\d{3,}', na=False)  # รถบรรทุก (7/8/9 + ≥ 3 หลัก)
-    _plate_has_digits = df_pd['ทะเบียนรถ'].str.contains(r'\d', regex=True, na=False)  # ต้องมีตัวเลข
-    _prov_valid       = df_pd['จังหวัด'].str.len() > 0  # ต้องมีจังหวัด
-    _valid_plate      = (_plate_has_thai | _plate_is_truck) & _plate_has_digits & _prov_valid
+    # ★ Filter ตามมาตรฐาน DLT: รถยนต์=[ก-ฮ]{1-3}+\d{1-4} | ใหม่=\d{1-2}+[ก-ฮ]+\d | รถบรรทุก=6หลักพอดี + จังหวัด
+    _plate_car        = df_pd['ทะเบียนรถ'].str.match(r'^[ก-ฮ]{1,3}\d{1,4}$', na=False)        # รถยนต์ทั่วไป
+    _plate_car_new    = df_pd['ทะเบียนรถ'].str.match(r'^\d{1,2}[ก-ฮ]{1,3}\d{1,4}$', na=False) # รูปแบบใหม่ (1กฤ1234)
+    _plate_truck      = df_pd['ทะเบียนรถ'].str.match(r'^[1-9]\d{5}$', na=False)                         # รถบรรทุก/ขนส่ง 6หลัก (prefix 10-99+4หลัก)
+    _prov_valid       = df_pd['จังหวัด'].str.len() > 0
+    _valid_plate      = (_plate_car | _plate_car_new | _plate_truck) & _prov_valid
     df_pd = df_pd[_valid_plate].copy()
 
     # ★ Format ทะเบียน_Full พร้อมเว้นวรรค: ขต1068อุบลราชธานี → ขต 1068 อุบลราชธานี | 1ข789 → 1ข 789
@@ -2004,6 +2004,16 @@ def repeat_offender_analysis(reports_df, reference_date, window_days=30, min_day
                 p_data = priority_data
                 
             pdf = pd.DataFrame(p_data)
+            if pdf.empty: continue
+            import re as _re_plt
+            if 'เป้าหมาย' in pdf.columns:
+                def _vp(s):
+                    for pt in str(s).split('/'):
+                        pt = pt.strip()
+                        if _re_plt.search(r'[ก-ฮ]\d', pt): return True
+                        if _re_plt.match(r'^[1-9]\d{5}', pt): return True
+                    return False
+                pdf = pdf[pdf['เป้าหมาย'].apply(_vp)].reset_index(drop=True)
             if pdf.empty: continue
             for _, row in pdf.iterrows():
                 score_val = row.get('Risk Score', 0)
@@ -3110,15 +3120,13 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
                         priority_df = pd.DataFrame(p_data)
                         
                         import ast, re as _re
-                        # ★ Filter: ตัดทะเบียนไม่สมบูรณ์ออกจาก priority_df (daily display)
+                        # ★ Filter ตามมาตรฐาน DLT: ตัดทะเบียนไม่สมบูรณ์ออกจาก priority_df
                         if not priority_df.empty and 'เป้าหมาย' in priority_df.columns:
                             def _valid_priority_plate(target_str):
                                 for part in str(target_str).split('/'):
                                     part = part.strip()
-                                    if _re.search(r'[ก-ฮ]\d', part):  # อักษรตามด้วยตัวเลข = plate จริง
-                                        return True
-                                    if _re.match(r'^[789]\d{3,}', part):  # truck format
-                                        return True
+                                    if _re.search(r'[ก-ฮ]\d', part): return True   # อักษรไทยตามตัวเลข = plate
+                                    if _re.match(r'^[1-9]\d{5}', part): return True     # truck 6หลัก DLT
                                 return False
                             priority_df = priority_df[priority_df['เป้าหมาย'].apply(_valid_priority_plate)].reset_index(drop=True)
 
