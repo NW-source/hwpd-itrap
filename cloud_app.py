@@ -2680,6 +2680,18 @@ def show_clickable_table(df_display, table_key, active_db, priority_df):
 # ==========================================
 # ── Login Guard — ต้อง Login ก่อนเห็น UI ─────────────────────────────────────
 require_login()
+
+# ── System Health Check (ป้องกัน crash จาก Supabase throttle) ──────────────
+if _IS_CLOUD and not st.session_state.get('_health_checked'):
+    try:
+        from supabase_sync import get_supabase_client as _hc_sb
+        _hc_sb().table('users').select('username').limit(1).execute()
+        st.session_state['_supabase_ok'] = True
+    except Exception as _hc_e:
+        st.session_state['_supabase_ok'] = False
+        _hc_msg = str(_hc_e)[:120]
+        st.warning(f"⚠️ ระบบ Cloud ทำงานในโหมดจำกัด — Supabase ไม่พร้อมชั่วคราว ({_hc_msg})\n\nข้อมูล Upload และ Login ยังใช้งานได้ปกติ")
+    st.session_state['_health_checked'] = True
 # ── Logo Banner ──────────────────────────────────────────────────────────────
 import os as _os
 _logo_path = _os.path.join(_os.path.dirname(__file__), 'logo.jpeg')
