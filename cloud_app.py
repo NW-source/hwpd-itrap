@@ -1141,14 +1141,17 @@ def process_raw_data_polars(df_pd):
     _valid_plate      = (_plate_has_thai | _plate_is_truck) & _plate_has_digits & _prov_valid
     df_pd = df_pd[_valid_plate].copy()
 
-    # ★ Format ทะเบียน_Full พร้อมเว้นวรรค: ขี1068อุบลราชธานี → ขต 1068 อุบลราชธานี
+    # ★ Format ทะเบียน_Full พร้อมเว้นวรรค: ขต1068อุบลราชธานี → ขต 1068 อุบลราชธานี | 1ข789 → 1ข 789
     _pr = df_pd['ทะเบียนรถ'].astype(str)
     _pv = df_pd['จังหวัด'].astype(str)
-    _thai_part  = _pr.str.extract(r'^([ก-ฮ]+)', expand=False).fillna('')
-    _digit_part = _pr.str.extract(r'(\d+)', expand=False).fillna('')
-    _has_thai_p = _thai_part.str.len() > 0
-    _fmt_plate  = np.where(_has_thai_p, _thai_part + ' ' + _digit_part, _pr)  # เพิ่มช่องว่างระหว่างตัวอักษร-ตัวเลข
-    df_pd['ทะเบียน_Full'] = _fmt_plate + ' ' + _pv  # letters space digits space province
+    # Extract prefix (all non-trailing-digits) + suffix (trailing digits)
+    _prefix_part = _pr.str.extract(r'^(.*?)\d+$', expand=False).fillna('')
+    _suffix_part = _pr.str.extract(r'(\d+)$', expand=False).fillna('')
+    _has_prefix  = _prefix_part.str.len() > 0
+    _has_suffix  = _suffix_part.str.len() > 0
+    _fmt_plate   = np.where(_has_prefix & _has_suffix, _prefix_part + ' ' + _suffix_part, _pr)
+    df_pd['ทะเบียน_Full'] = _fmt_plate + ' ' + _pv  # "ขต 1068 อุบลราชธานี" or "1ข 789 กรุงเทพ"
+
 
     df_pd['ละติจูด'] = pd.to_numeric(df_pd['ละติจูด'], errors='coerce').fillna(0.0)
     df_pd['ลองจิจูด'] = pd.to_numeric(df_pd['ลองจิจูด'], errors='coerce').fillna(0.0)
