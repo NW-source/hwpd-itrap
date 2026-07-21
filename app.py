@@ -520,7 +520,7 @@ def render_realtime_tab(selected_date: str, rt_active_db: pd.DataFrame, rt_prior
             _tid   = str(_r.get('Target_ID', _plate_first))   # ← เก็บ Target_ID จริง
             rows.append({'ระดับ':'🔴 ยืนยัน','ทะเบียน':_plate_display,'กล้องที่พบ':_nc,
                          'กล้องล่าสุด':_lc,'เวลาล่าสุด':_lt,
-                         'Score': int(_scr) if str(_scr).lstrip('-').isdigit() else _scr,
+                         'Score': str(int(float(str(_scr)))) if str(_scr).replace('.','').lstrip('-').isdigit() and str(_scr) not in ('-','') else '-',
                          '_r':_reas,'_rec':_rec,'_type':str(_r.get('ประเภท','')),'_cars':_cars,
                          '_tid':_tid})  # ← Target_ID
 
@@ -536,6 +536,7 @@ def render_realtime_tab(selected_date: str, rt_active_db: pd.DataFrame, rt_prior
 
         _full = pd.DataFrame(rows)
         _disp = _full[['ระดับ','ทะเบียน','กล้องที่พบ','กล้องล่าสุด','เวลาล่าสุด','Score']].copy()
+        _disp['Score'] = _disp['Score'].astype(str)  # ป้องกัน ArrowInvalid mixed-type
 
         st.caption("🖱️ คลิกแถวเพื่อดูเหตุผล AI + คำแนะนำ + แผนที่ด้านล่าง")
         _ev = st.dataframe(_disp, use_container_width=True, hide_index=True,
