@@ -1375,9 +1375,7 @@ def run_intelligence_orchestrator(active_db_pl,
                         
         adj_car = defaultdict(set)
         for pair, cams in pair_cams_car.items():
-            # ★ อนุญาตขาด 1 กล้อง: ถ้าผ่านร่วมกัน ≥ e2_shared-1 ด่าน ยังนับเป็นคู่ขบวนได้
-            # Gap Penalty (×0.9) จะลดคะแนนอัตโนมัติอยู่แล้ว
-            if len(cams) >= max(2, e2_shared - 1):  # ผ่านร่วมกัน ≥ e2_shared-1 ด่าน (ยอมรับขาด 1)
+            if len(cams) >= e2_shared:  # ผ่านร่วมกัน >= e2_shared ด่าน (sync กับ app.py)
                 adj_car[pair[0]].add(pair[1])
                 adj_car[pair[1]].add(pair[0])
                 
@@ -1404,7 +1402,7 @@ def run_intelligence_orchestrator(active_db_pl,
                                 is_valid = False
                                 break
                             cams_passed.add(cam)
-                    if is_valid and len(cams_passed) >= max(2, e2_shared - 1):  # ★ ยอมรับขาด 1 กล้อง
+                    if is_valid and len(cams_passed) >= e2_shared:  # sync กับ app.py
                         gap_val = df_target.groupby('จุดติดตั้งกล้อง').apply(lambda x: (x['Datetime'].max() - x['Datetime'].min()).total_seconds()).mean()
                         convoys_car.append({'cars': comp_list, 'cams': len(cams_passed),
                                              'gap': gap_val, 'shared_cams': cams_passed})
