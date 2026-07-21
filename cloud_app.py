@@ -947,6 +947,14 @@ else:
     except Exception:
         pass        # cloud ใช้ Supabase เป็นหลัก ถ้า SQLite ไม่ได้ก็ผ่านไป
 
+# ─── Supabase Keep-Alive ping (ป้องกัน free tier pause หลัง 7 วัน) ───────────
+if _IS_CLOUD:
+    try:
+        from supabase_sync import get_supabase_client as _get_sb
+        _get_sb().table('users').select('username').limit(1).execute()
+    except Exception:
+        pass  # ถ้า Supabase หยุดชั่วคราว app ยังทำงาน degraded mode ต่อได้
+
 @st.cache_data(ttl=300)
 def load_historical_data():
     if os.path.exists(PARQUET_PATH):
