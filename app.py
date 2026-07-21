@@ -2955,6 +2955,19 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
             try:
                 parsed_json = json.loads(row[0])
                 priority_df = pd.DataFrame(parsed_json)
+                # ★ Filter: ตัดทะเบียนไม่สมบูรณ์ออกจาก priority_df (daily display)
+                if not priority_df.empty and 'เป้าหมาย' in priority_df.columns:
+                    import re as _re
+                    def _valid_priority_plate(target_str):
+                        """plate valid ถ้า: มี [ก-ฮ][digit] ใน string (เป็น plate จริง) หรือ truck format"""
+                        for part in str(target_str).split('/'):
+                            part = part.strip()
+                            if _re.search(r'[ก-ฮ]\d', part):  # อักษรตามด้วยตัวเลข = plate จริง
+                                return True
+                            if _re.match(r'^[789]\d{3,}', part):  # truck format
+                                return True
+                        return False
+                    priority_df = priority_df[priority_df['เป้าหมาย'].apply(_valid_priority_plate)].reset_index(drop=True)
             except Exception as e:
                 priority_df = pd.DataFrame()
         else:
