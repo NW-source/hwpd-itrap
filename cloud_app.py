@@ -258,13 +258,33 @@ def load_realtime_session(session_date: str):
         return None
     try:
         from supabase_sync import pull_parquet_from_cloud, get_supabase_client
+        import json, ast
         
-        # 1. Pull metadata from cloud_realtime table (for upload count, etc)
+        # 1. Pull metadata + priority_json from cloud_realtime table
         client = get_supabase_client()
-        res = client.table('cloud_realtime').select('upload_count, first_record_time, last_record_time, updated_at').eq('session_date', session_date).execute()
+        res = client.table('cloud_realtime').select(
+            'upload_count, first_record_time, last_record_time, updated_at, priority_json'
+        ).eq('session_date', session_date).execute()
         meta = res.data[0] if res.data else {}
 
-        # 2. Pull the actual raw data from Cloud Storage Parquet
+        # 2. Parse pre-computed priority_json (uploaded by Local)
+        pre_priority_df = pd.DataFrame()
+        raw_pri = meta.get('priority_json')
+        if raw_pri:
+            try:
+                p_data = json.loads(raw_pri) if isinstance(raw_pri, str) else raw_pri
+                if p_data:
+                    pre_priority_df = pd.DataFrame(p_data)
+                    # Restore list/dict columns
+                    for col in ['Cars_List', 'Radar_Data', 'dates_list']:
+                        if col in pre_priority_df.columns:
+                            pre_priority_df[col] = pre_priority_df[col].apply(
+                                lambda x: ast.literal_eval(x) if isinstance(x, str) else x
+                            )
+            except Exception:
+                pre_priority_df = pd.DataFrame()
+
+        # 3. Pull the actual raw data from Cloud Storage Parquet
         df_pl = pull_parquet_from_cloud(session_date)
         if df_pl is None or df_pl.is_empty():
             return None
@@ -274,10 +294,11 @@ def load_realtime_session(session_date: str):
             df['Datetime'] = pd.to_datetime(df['Datetime'])
             
         return {
-            'df': df, 
+            'df': df,
+            'priority_df': pre_priority_df,   # ★ pre-computed by Local, skip re-analysis
             'upload_count': meta.get('upload_count', 1),
-            'first_time': meta.get('first_record_time', str(df['Datetime'].min()) if not df.empty else '-'), 
-            'last_time': meta.get('last_record_time', str(df['Datetime'].max()) if not df.empty else '-'), 
+            'first_time': meta.get('first_record_time', str(df['Datetime'].min()) if not df.empty else '-'),
+            'last_time': meta.get('last_record_time', str(df['Datetime'].max()) if not df.empty else '-'),
             'updated_at': meta.get('updated_at', '-')
         }
     except Exception as _e:
@@ -332,10 +353,16 @@ def render_realtime_tab(selected_date: str, rt_active_db: pd.DataFrame, rt_prior
     n_cams_tot = rt_df['จุดติดตั้งกล้อง'].nunique() if 'จุดติดตั้งกล้อง' in rt_df.columns else 0
     upload_count = st.session_state.get('_rt_upload_count', 1)
 
-    # ── 🔴 ยืนยัน — รัน Realtime Engine (cache ต่อ session) ──────────────
+    # ── ★ ใช้ priority จาก Local upload ถ้ามี (ไม่ re-run engine) ──────────
     _rt_cache_key = f"rt_pri_{len(rt_df)}_{rt_df['Datetime'].max() if 'Datetime' in rt_df.columns else ''}"
-    if st.session_state.get('_rt_cache_key') == _rt_cache_key and '_rt_pri_cache' in st.session_state:
-        rt_pri = st.session_state['_rt_pri_cache']  # ใช้ cache ไม่รัน engine ซ้ำ
+    
+    # rt_priority_df คือผลที่ Local คำนวณไว้แล้ว — ใช้โดยตรงถ้า valid
+    if not rt_priority_df.empty:
+        rt_pri = rt_priority_df  # ★ ใช้ผลสำเร็จรูปจาก Local
+        st.session_state['_rt_pri_cache'] = rt_pri
+        st.session_state['_rt_cache_key'] = _rt_cache_key
+    elif st.session_state.get('_rt_cache_key') == _rt_cache_key and '_rt_pri_cache' in st.session_state:
+        rt_pri = st.session_state['_rt_pri_cache']  # ใช้ cache
     else:
         with st.spinner('⚡ วิเคราะห์ Realtime... (คิดครั้งเดียว)'):
             try:
@@ -3300,8 +3327,12 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
                             # ── มีข้อมูล → render realtime tab ───────────────
                             st.session_state['_rt_upload_count'] = _rt_session.get('upload_count', 1)
                             _rt_today_df = _rt_session['df']
+                            # ★ ใช้ priority_df ที่ Local คำนวณและ upload ไว้ (ไม่ re-run engine บน Cloud)
+                            _rt_priority_df = _rt_session.get('priority_df', pd.DataFrame())
+                            if _rt_priority_df.empty:
+                                _rt_priority_df = priority_df  # fallback
                             try:
-                                render_realtime_tab(_today_str, _rt_today_df, priority_df)
+                                render_realtime_tab(_today_str, _rt_today_df, _rt_priority_df)
                             except Exception as _rte:
                                 import traceback
                                 st.error(f"❌ Realtime Error: {_rte}")
