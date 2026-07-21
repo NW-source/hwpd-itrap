@@ -2006,23 +2006,24 @@ def repeat_offender_analysis(reports_df, reference_date, window_days=30, min_day
             pdf = pd.DataFrame(p_data)
             if pdf.empty: continue
             import re as _re_plt
+            # ─ define helpers ที่นี่เสมอ ไม่ว่าจะมี column เป้าหมาย หรือไม่ ─
+            def _vp(s):
+                for pt in str(s).split('/'):
+                    pt = pt.strip()
+                    ps2 = _re_plt.sub(r'\s+', '', pt)
+                    if _re_plt.search(r'[ก-ฮ]\d', ps2) and _re_plt.search(r'\d[ก-ฮ]', ps2): return True
+                    if _re_plt.match(r'^[1-9]\d{5}[ก-ฮ]', ps2): return True
+                return False
+            def _fp(s):
+                parts = []
+                for part in str(s).split('/'):
+                    part = part.strip()
+                    part = _re_plt.sub(r'([ก-ฮ])(\d)', r'\1 \2', part)
+                    part = _re_plt.sub(r'(\d)([ก-ฮ])', r'\1 \2', part)
+                    part = _re_plt.sub(r' +', ' ', part).strip()
+                    parts.append(part)
+                return ' / '.join(parts)
             if 'เป้าหมาย' in pdf.columns:
-                def _vp(s):
-                    for pt in str(s).split('/'):
-                        pt = pt.strip()
-                        ps2 = _re_plt.sub(r' ', '', pt)
-                        if _re_plt.search(r'[ก-ฮ]\d', ps2) and _re_plt.search(r'\d[ก-ฮ]', ps2): return True
-                        if _re_plt.match(r'^[1-9]\d{5}[ก-ฮ]', ps2): return True
-                    return False
-                def _fp(s):
-                    parts = []
-                    for part in str(s).split('/'):
-                        part = part.strip()
-                        part = _re_plt.sub(r'([ก-ฮ])(\d)', r'\1 \2', part)
-                        part = _re_plt.sub(r'(\d)([ก-ฮ])', r'\1 \2', part)
-                        part = _re_plt.sub(r' +', ' ', part).strip()
-                        parts.append(part)
-                    return ' / '.join(parts)
                 pdf = pdf[pdf['เป้าหมาย'].apply(_vp)].reset_index(drop=True)
                 if not pdf.empty:
                     pdf['เป้าหมาย'] = pdf['เป้าหมาย'].apply(_fp)
@@ -2035,10 +2036,9 @@ def repeat_offender_analysis(reports_df, reference_date, window_days=30, min_day
                 for plate in row.get('Cars_List', []):
                     ps = _re_plt.sub(r'\s+', '', str(plate).strip())
                     if not ((_re_plt.search(r'[ก-ฮ]\d', ps) and _re_plt.search(r'\d[ก-ฮ]', ps)) or _re_plt.match(r'^[1-9]\d{5}[ก-ฮ]', ps)): continue
-                    ps = str(plate).strip()  # restore original for formatting
-                    ps = _fp(ps)
+                    plate_fmt = _fp(str(plate).strip())
                     records.append({
-                        'plate': ps,
+                        'plate': plate_fmt,
                         'ประเภท': row.get('ประเภท', ''),
                         'score': score_val,
                         'report_date': report_date,
