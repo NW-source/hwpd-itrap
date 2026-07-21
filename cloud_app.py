@@ -938,7 +938,13 @@ def init_db():
     conn.commit()
     conn.close()
 
-init_db()
+if not _IS_CLOUD:
+    init_db()   # local เท่านั้น — cloud ใช้ Supabase ไม่ต้องการ SQLite
+else:
+    try:
+        init_db()   # พยายาม init /tmp fallback
+    except Exception:
+        pass        # cloud ใช้ Supabase เป็นหลัก ถ้า SQLite ไม่ได้ก็ผ่านไป
 
 @st.cache_data(ttl=300)
 def load_historical_data():
