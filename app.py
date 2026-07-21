@@ -1906,15 +1906,16 @@ def repeat_offender_analysis(db_path, reference_date, window_days=30, min_days=3
         for p in str(s).split('/'):
             p = p.strip()
             # รถยนต์: [ก-ฮ]ตามตัวเลข AND ตัวเลขตาม[ก-ฮ] (มีจังหวัดเริ่มด้วยอักษรไทย)
-            if _re_plate.search(r'[ก-ฮ]\d', p) and _re_plate.search(r'\d[ก-ฮ]', p):
+            ps = _re_plate.sub(r' ', '', p)
+            if _re_plate.search(r'[ก-ฮ]\d', ps) and _re_plate.search(r'\d[ก-ฮ]', ps):
                 return True
             # รถบรรทุก: 6หลักตามด้วยจังหวัด
-            if _re_plate.match(r'^[1-9]\d{5}[ก-ฮ]', p):
+            if _re_plate.match(r'^[1-9]\d{5}[ก-ฮ]', ps):
                 return True
         return False
     def _valid_car(p):
         """validate ทะเบียนเดี่ยว (Cars_List)"""
-        p = str(p).strip()
+        p = _re_plate.sub(r' ', '', str(p).strip())
         if _re_plate.search(r'[ก-ฮ]\d', p) and _re_plate.search(r'\d[ก-ฮ]', p): return True
         if _re_plate.match(r'^[1-9]\d{5}[ก-ฮ]', p): return True
         return False
@@ -3019,8 +3020,9 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
                     def _valid_priority_plate(target_str):
                         for part in str(target_str).split('/'):
                             part = part.strip()
-                            if _re.search(r'[ก-ฮ]\d', part) and _re.search(r'\d[ก-ฮ]', part): return True
-                            if _re.match(r'^[1-9]\d{5}[ก-ฮ]', part): return True
+                            ps = _re.sub(r' ', '', part)
+                            if _re.search(r'[ก-ฮ]\d', ps) and _re.search(r'\d[ก-ฮ]', ps): return True
+                            if _re.match(r'^[1-9]\d{5}[ก-ฮ]', ps): return True
                         return False
                     def _fmt_priority_plate(target_str):
                         """เพิ่มวรรคใน plate: 702462กรุงเทพ→702462 กรุงเทพ, วสผล532กรุงเทพ→วสผล 532 กรุงเทพ"""
