@@ -1,10 +1,15 @@
 """
-auth.py — ระบบ Login และ Role Management สำหรับ HWPD i-Trap
+auth.py — ระบบ Login, Role Management และ IP Brute-Force Protection สำหรับ HWPD i-Trap
 """
 import hashlib
 import secrets
 import streamlit as st
+from datetime import datetime, timezone, timedelta
 from typing import Optional
+
+# ─── Constants ────────────────────────────────────────────────────────────────
+MAX_ATTEMPTS   = 10          # จำนวนครั้งสูงสุดก่อน block
+BLOCK_HOURS    = 24          # ระยะเวลา block (ชั่วโมง)
 
 # ─── Password Hashing ─────────────────────────────────────────────────────────
 def hash_password(password: str) -> str:
@@ -23,6 +28,115 @@ def verify_password(password: str, stored_hash: str) -> bool:
         return secrets.compare_digest(check, hashed)
     except Exception:
         return False
+
+# ─── IP Detection ─────────────────────────────────────────────────────────────
+def get_client_ip() -> str:
+    """ดึง IP จริงของ Client จาก Streamlit headers (Streamlit Cloud ผ่าน proxy)"""
+    try:
+        headers = st.context.headers
+        # X-Forwarded-For: client, proxy1, proxy2 — ใช้ตัวแรก
+        xff = headers.get("X-Forwarded-For", "")
+        if xff:
+            return xff.split(",")[0].strip()
+        return headers.get("X-Real-IP", headers.get("Remote-Addr", "unknown"))
+    except Exception:
+        return "unknown"
+
+# ─── IP Brute-Force Protection ────────────────────────────────────────────────
+def _get_sb():
+    from supabase_sync import get_supabase_client
+    return get_supabase_client()
+
+def check_ip_blocked(ip: str) -> dict:
+    """
+    ตรวจว่า IP นี้ถูก block อยู่หรือไม่
+    Return: {'blocked': bool, 'blocked_until': str, 'attempts': int}
+    """
+    if ip == "unknown":
+        return {'blocked': False, 'blocked_until': None, 'attempts': 0}
+    try:
+        client = _get_sb()
+        res = client.table('ip_blocklist').select('*').eq('ip_address', ip).execute()
+        if not res.data:
+            return {'blocked': False, 'blocked_until': None, 'attempts': 0}
+
+        row = res.data[0]
+        blocked_until = row.get('blocked_until')
+        attempts      = row.get('attempt_count', 0)
+
+        if blocked_until:
+            bu = datetime.fromisoformat(blocked_until.replace('Z', '+00:00'))
+            now = datetime.now(timezone.utc)
+            if now < bu:
+                # ยังถูก block อยู่
+                remaining = bu - now
+                hrs  = int(remaining.total_seconds() // 3600)
+                mins = int((remaining.total_seconds() % 3600) // 60)
+                return {
+                    'blocked': True,
+                    'blocked_until': bu.astimezone(timezone(timedelta(hours=7))).strftime('%d/%m/%Y %H:%M'),
+                    'remaining_hrs': hrs,
+                    'remaining_mins': mins,
+                    'attempts': attempts,
+                }
+            else:
+                # หมดเวลา block แล้ว — reset
+                _reset_ip(ip, client)
+                return {'blocked': False, 'blocked_until': None, 'attempts': 0}
+
+        return {'blocked': False, 'blocked_until': None, 'attempts': attempts}
+    except Exception:
+        return {'blocked': False, 'blocked_until': None, 'attempts': 0}
+
+def record_failed_attempt(ip: str) -> int:
+    """
+    บันทึกความพยายาม login ผิด — return จำนวนครั้งทั้งหมด
+    ถ้าครบ MAX_ATTEMPTS จะ block IP ทันที
+    """
+    if ip == "unknown":
+        return 0
+    try:
+        client = _get_sb()
+        now_iso = datetime.now(timezone.utc).isoformat()
+
+        res = client.table('ip_blocklist').select('attempt_count').eq('ip_address', ip).execute()
+
+        if res.data:
+            new_count = res.data[0]['attempt_count'] + 1
+            update_data = {
+                'attempt_count': new_count,
+                'last_attempt':  now_iso,
+            }
+            if new_count >= MAX_ATTEMPTS:
+                block_time = datetime.now(timezone.utc) + timedelta(hours=BLOCK_HOURS)
+                update_data['blocked_until'] = block_time.isoformat()
+            client.table('ip_blocklist').update(update_data).eq('ip_address', ip).execute()
+        else:
+            new_count = 1
+            client.table('ip_blocklist').insert({
+                'ip_address':    ip,
+                'attempt_count': 1,
+                'first_attempt': now_iso,
+                'last_attempt':  now_iso,
+                'blocked_until': None,
+            }).execute()
+
+        return new_count
+    except Exception:
+        return 0
+
+def _reset_ip(ip: str, client=None):
+    """Reset attempt count สำหรับ IP (หลัง login สำเร็จ หรือหมด block time)"""
+    try:
+        if client is None:
+            client = _get_sb()
+        client.table('ip_blocklist').delete().eq('ip_address', ip).execute()
+    except Exception:
+        pass
+
+def clear_ip_attempts(ip: str):
+    """เรียกหลัง login สำเร็จ — ล้าง attempt counter"""
+    _reset_ip(ip)
 
 # ─── Supabase User Operations ─────────────────────────────────────────────────
 def get_user(username: str) -> Optional[dict]:
@@ -114,7 +228,7 @@ ROLE_LABEL = {
 }
 
 def render_login_page():
-    """แสดงหน้า Login — เรียกก่อน UI หลัก"""
+    """แสดงหน้า Login — เรียกก่อน UI หลัก พร้อมระบบ IP Blocking"""
     st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700;800&display=swap');
@@ -131,9 +245,19 @@ def render_login_page():
     .login-title { font-size:22px; font-weight:800; color:#93c5fd;
         text-align:center; margin-bottom:4px; }
     .login-sub   { font-size:14px; color:#64748b; text-align:center; margin-bottom:28px; }
+    .block-box {
+        background: rgba(239,68,68,0.15); border: 1px solid #ef4444;
+        border-radius: 12px; padding: 20px; text-align: center; margin-bottom: 16px;
+    }
+    .block-title { font-size: 18px; font-weight: 700; color: #f87171; margin-bottom: 8px; }
+    .block-msg   { font-size: 14px; color: #fca5a5; }
+    .warn-box {
+        background: rgba(245,158,11,0.15); border: 1px solid #f59e0b;
+        border-radius: 8px; padding: 10px 14px; margin-top: 8px;
+        font-size: 13px; color: #fbbf24; text-align: center;
+    }
     </style>
     """, unsafe_allow_html=True)
-
 
     col = st.columns([1, 2, 1])[1]
     with col:
@@ -146,10 +270,39 @@ def render_login_page():
         st.markdown("<div class='login-title'>🛡️ HWPD i-Trap</div>", unsafe_allow_html=True)
         st.markdown("<div class='login-sub'>Intelligence Command System — กรุณาเข้าสู่ระบบ</div>", unsafe_allow_html=True)
 
+        # ── ตรวจสอบ IP Block ────────────────────────────────────────────────
+        client_ip  = get_client_ip()
+        ip_status  = check_ip_blocked(client_ip)
+
+        if ip_status['blocked']:
+            st.markdown(f"""
+            <div class='block-box'>
+                <div class='block-title'>🚫 IP ของคุณถูกบล็อก</div>
+                <div class='block-msg'>
+                    เนื่องจากพยายาม Login ผิดพลาดเกิน {MAX_ATTEMPTS} ครั้ง<br>
+                    กรุณารอถึง <b>{ip_status['blocked_until']} น.</b><br>
+                    (อีก {ip_status.get('remaining_hrs', 0)} ชม. {ip_status.get('remaining_mins', 0)} นาที)
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+            return  # หยุด — ไม่แสดง form
+
+        # ── แสดงจำนวนครั้งที่เหลือ (ถ้าเคยผิดมาแล้ว) ─────────────────────
+        attempts_so_far = ip_status.get('attempts', 0)
+        remaining_tries = MAX_ATTEMPTS - attempts_so_far
+
         with st.form("login_form", clear_on_submit=False):
-            username = st.text_input("👤 ชื่อผู้ใช้ (Username)", placeholder="เช่น admin01")
-            password = st.text_input("🔑 รหัสผ่าน (Password)", type="password")
+            username  = st.text_input("👤 ชื่อผู้ใช้ (Username)", placeholder="เช่น admin01")
+            password  = st.text_input("🔑 รหัสผ่าน (Password)", type="password")
             submitted = st.form_submit_button("🔓 เข้าสู่ระบบ", use_container_width=True, type="primary")
+
+        # ── แสดง warning เมื่อผิดมาแล้วบางส่วน ─────────────────────────────
+        if attempts_so_far > 0:
+            st.markdown(
+                f"<div class='warn-box'>⚠️ พยายาม Login ผิดไปแล้ว <b>{attempts_so_far}</b> ครั้ง "
+                f"— เหลืออีก <b>{remaining_tries}</b> ครั้งก่อนถูกบล็อก 24 ชม.</div>",
+                unsafe_allow_html=True
+            )
 
         if submitted:
             if not username or not password:
@@ -160,13 +313,22 @@ def render_login_page():
                 user = get_user(username.strip().lower())
 
             if user and verify_password(password, user['password_hash']):
+                # ✅ Login สำเร็จ — ล้าง attempt counter
+                clear_ip_attempts(client_ip)
                 st.session_state['current_user'] = user
                 update_last_login(username.strip().lower())
                 role_label = ROLE_LABEL.get(user['role'], user['role'])
                 st.success(f"✅ ยินดีต้อนรับ {user.get('display_name', username)} — {role_label}")
                 st.rerun()
             else:
-                st.error("❌ Username หรือ Password ไม่ถูกต้อง")
+                # ❌ Login ผิด — บันทึก attempt
+                new_count = record_failed_attempt(client_ip)
+                if new_count >= MAX_ATTEMPTS:
+                    st.error(f"🚫 คุณพยายาม Login ผิดครบ {MAX_ATTEMPTS} ครั้ง — IP ถูกบล็อก 24 ชั่วโมง")
+                    st.rerun()
+                else:
+                    left = MAX_ATTEMPTS - new_count
+                    st.error(f"❌ Username หรือ Password ไม่ถูกต้อง (เหลือ {left} ครั้งก่อนถูกบล็อก)")
 
         # Debug error
         if '_auth_error' in st.session_state:
