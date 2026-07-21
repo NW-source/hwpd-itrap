@@ -1132,8 +1132,24 @@ def process_raw_data_polars(df_pd):
     df_pd['ทะเบียนรถ'] = _s
     df_pd['จังหวัด'] = df_pd['จังหวัด'].fillna('').astype(str).str.strip().str.replace('None', '').str.replace('nan', '')
     df_pd = df_pd.dropna(subset=['ทะเบียนรถ'])
-    df_pd['ทะเบียน_Full'] = df_pd['ทะเบียนรถ'] + df_pd['จังหวัด']
-    
+
+    # ★ Filter: ตัดทะเบียนไม่สมบูรณ์ — ต้องมีหมวดตัวอักษร + หมวดตัวเลข + จังหวัด ครบ
+    _plate_has_thai   = df_pd['ทะเบียนรถ'].str.contains(r'[ก-ฮ]', regex=True, na=False)
+    _plate_is_truck   = df_pd['ทะเบียนรถ'].str.match(r'^[789]\d{3,}', na=False)  # รถบรรทุก (7/8/9 + ≥ 3 หลัก)
+    _plate_has_digits = df_pd['ทะเบียนรถ'].str.contains(r'\d', regex=True, na=False)  # ต้องมีตัวเลข
+    _prov_valid       = df_pd['จังหวัด'].str.len() > 0  # ต้องมีจังหวัด
+    _valid_plate      = (_plate_has_thai | _plate_is_truck) & _plate_has_digits & _prov_valid
+    df_pd = df_pd[_valid_plate].copy()
+
+    # ★ Format ทะเบียน_Full พร้อมเว้นวรรค: ขี1068อุบลราชธานี → ขต 1068 อุบลราชธานี
+    _pr = df_pd['ทะเบียนรถ'].astype(str)
+    _pv = df_pd['จังหวัด'].astype(str)
+    _thai_part  = _pr.str.extract(r'^([ก-ฮ]+)', expand=False).fillna('')
+    _digit_part = _pr.str.extract(r'(\d+)', expand=False).fillna('')
+    _has_thai_p = _thai_part.str.len() > 0
+    _fmt_plate  = np.where(_has_thai_p, _thai_part + ' ' + _digit_part, _pr)  # เพิ่มช่องว่างระหว่างตัวอักษร-ตัวเลข
+    df_pd['ทะเบียน_Full'] = _fmt_plate + ' ' + _pv  # letters space digits space province
+
     df_pd['ละติจูด'] = pd.to_numeric(df_pd['ละติจูด'], errors='coerce').fillna(0.0)
     df_pd['ลองจิจูด'] = pd.to_numeric(df_pd['ลองจิจูด'], errors='coerce').fillna(0.0)
     df_pd = df_pd[(df_pd['ละติจูด'] != 0.0) & (df_pd['ลองจิจูด'] != 0.0)].copy()
