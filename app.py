@@ -1904,15 +1904,26 @@ def repeat_offender_analysis(db_path, reference_date, window_days=30, min_days=3
     def _valid_plt(s):
         for p in str(s).split('/'):
             p = p.strip()
-            if _re_plate.search(r'[ก-ฮ]\d', p): return True       # อักษรตามตัวเลข = plate จริง
-            if _re_plate.match(r'^[1-9]\d{5}', p): return True           # รถบรรทุก 6หลัก
+            if _re_plate.search(r'[ก-ฮ]\d', p): return True
+            if _re_plate.match(r'^[1-9]\d{5}', p): return True
         return False
+    def _fmt_plate(s):
+        """เพิ่มวรรคใน plate+province string: วสผล532กรุงเทพ → วสผล 532 กรุงเทพ"""
+        parts = []
+        for part in str(s).split('/'):
+            part = part.strip()
+            part = _re_plate.sub(r'([ก-ฮ])(\d)', lambda m: m.group(1)+' '+m.group(2), part)
+            part = _re_plate.sub(r'(\d)([ก-ฮ])', lambda m: m.group(1)+' '+m.group(2), part)
+            part = _re_plate.sub(r' +', ' ', part).strip()
+            parts.append(part)
+        return ' / '.join(parts)
     for report_date, priority_data in rows:
         try:
             pdf = pd.DataFrame(json.loads(priority_data))
             if pdf.empty: continue
             if 'เป้าหมาย' in pdf.columns:
                 pdf = pdf[pdf['เป้าหมาย'].apply(_valid_plt)].reset_index(drop=True)
+                pdf['เป้าหมาย'] = pdf['เป้าหมาย'].apply(_fmt_plate)
             if pdf.empty: continue
             for _, row in pdf.iterrows():
                 score_val = row.get('Risk Score', 0)
@@ -2965,16 +2976,27 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
             try:
                 parsed_json = json.loads(row[0])
                 priority_df = pd.DataFrame(parsed_json)
-                # ★ Filter ตามมาตรฐาน DLT: ตัดทะเบียนไม่สมบูรณ์ออกจาก priority_df
+                # ★ Filter + Format ตามมาตรฐาน DLT
                 if not priority_df.empty and 'เป้าหมาย' in priority_df.columns:
                     import re as _re
                     def _valid_priority_plate(target_str):
                         for part in str(target_str).split('/'):
                             part = part.strip()
-                            if _re.search(r'[ก-ฮ]\d', part): return True   # อักษรไทยตามตัวเลข = plate
-                            if _re.match(r'^[1-9]\d{5}', part): return True     # truck 6หลัก DLT
+                            if _re.search(r'[ก-ฮ]\d', part): return True
+                            if _re.match(r'^[1-9]\d{5}', part): return True
                         return False
+                    def _fmt_priority_plate(target_str):
+                        """เพิ่มวรรคใน plate: 702462กรุงเทพ→702462 กรุงเทพ, วสผล532กรุงเทพ→วสผล 532 กรุงเทพ"""
+                        parts = []
+                        for part in str(target_str).split('/'):
+                            part = part.strip()
+                            part = _re.sub(r'([ก-ฮ])(\d)', r'\1 \2', part)  # Thai→digit
+                            part = _re.sub(r'(\d)([ก-ฮ])', r'\1 \2', part)  # digit→Thai
+                            part = _re.sub(r' +', ' ', part).strip()
+                            parts.append(part)
+                        return ' / '.join(parts)
                     priority_df = priority_df[priority_df['เป้าหมาย'].apply(_valid_priority_plate)].reset_index(drop=True)
+                    priority_df['เป้าหมาย'] = priority_df['เป้าหมาย'].apply(_fmt_priority_plate)
             except Exception as e:
                 priority_df = pd.DataFrame()
         else:

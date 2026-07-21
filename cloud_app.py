@@ -2013,7 +2013,18 @@ def repeat_offender_analysis(reports_df, reference_date, window_days=30, min_day
                         if _re_plt.search(r'[ก-ฮ]\d', pt): return True
                         if _re_plt.match(r'^[1-9]\d{5}', pt): return True
                     return False
+                def _fp(s):
+                    parts = []
+                    for part in str(s).split('/'):
+                        part = part.strip()
+                        part = _re_plt.sub(r'([ก-ฮ])(\d)', r'\1 \2', part)
+                        part = _re_plt.sub(r'(\d)([ก-ฮ])', r'\1 \2', part)
+                        part = _re_plt.sub(r' +', ' ', part).strip()
+                        parts.append(part)
+                    return ' / '.join(parts)
                 pdf = pdf[pdf['เป้าหมาย'].apply(_vp)].reset_index(drop=True)
+                if not pdf.empty:
+                    pdf['เป้าหมาย'] = pdf['เป้าหมาย'].apply(_fp)
             if pdf.empty: continue
             for _, row in pdf.iterrows():
                 score_val = row.get('Risk Score', 0)
@@ -3120,15 +3131,26 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
                         priority_df = pd.DataFrame(p_data)
                         
                         import ast, re as _re
-                        # ★ Filter ตามมาตรฐาน DLT: ตัดทะเบียนไม่สมบูรณ์ออกจาก priority_df
+                        # ★ Filter + Format ตามมาตรฐาน DLT
                         if not priority_df.empty and 'เป้าหมาย' in priority_df.columns:
                             def _valid_priority_plate(target_str):
                                 for part in str(target_str).split('/'):
                                     part = part.strip()
-                                    if _re.search(r'[ก-ฮ]\d', part): return True   # อักษรไทยตามตัวเลข = plate
-                                    if _re.match(r'^[1-9]\d{5}', part): return True     # truck 6หลัก DLT
+                                    if _re.search(r'[ก-ฮ]\d', part): return True
+                                    if _re.match(r'^[1-9]\d{5}', part): return True
                                 return False
+                            def _fmt_priority_plate(target_str):
+                                parts = []
+                                for part in str(target_str).split('/'):
+                                    part = part.strip()
+                                    part = _re.sub(r'([ก-ฮ])(\d)', r'\1 \2', part)
+                                    part = _re.sub(r'(\d)([ก-ฮ])', r'\1 \2', part)
+                                    part = _re.sub(r' +', ' ', part).strip()
+                                    parts.append(part)
+                                return ' / '.join(parts)
                             priority_df = priority_df[priority_df['เป้าหมาย'].apply(_valid_priority_plate)].reset_index(drop=True)
+                            if not priority_df.empty:
+                                priority_df['เป้าหมาย'] = priority_df['เป้าหมาย'].apply(_fmt_priority_plate)
 
                         # convert strings back to list/dict for UI render
                         if 'Cars_List' in priority_df.columns:
