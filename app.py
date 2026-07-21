@@ -2568,7 +2568,7 @@ def show_clickable_table(df_display, table_key, active_db, priority_df):
     df_clean = df_clean[cols_order].copy()
     
     event = st.dataframe(
-        df_clean.style.map(color_score, subset=['Risk Score']),
+        df_clean,  # ไม่ใช้ style.map — ลด memory overhead
         use_container_width=True, on_select="rerun", selection_mode="single-row", hide_index=True,
         key=f"tbl_{table_key}",
         column_config={

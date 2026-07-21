@@ -1104,6 +1104,7 @@ def preliminary_data_check(files):
     if not files: return None
     df_list = [pd.read_csv(f) if f.name.endswith('.csv') else pd.read_excel(f) for f in files]
     df_pd = pd.concat(df_list, ignore_index=True)
+    del df_list  # free individual file DataFrames after concat
     
     total_raw = len(df_pd)
     rename_dict = {'ทะเบียน': 'ทะเบียนรถ', 'ป้ายทะเบียน': 'ทะเบียนรถ'}
@@ -2002,6 +2003,7 @@ def repeat_offender_analysis(reports_df, reference_date, window_days=30, min_day
         return pd.DataFrame()
 
     records = []
+    import gc as _gc_rep
     for report_date, priority_data in rows:
         try:
             if isinstance(priority_data, str):
@@ -2052,6 +2054,9 @@ def repeat_offender_analysis(reports_df, reference_date, window_days=30, min_day
                         'เหตุผล': str(row.get('พฤติกรรมต้องสงสัย', ''))[:120],
                     })
         except: pass
+        finally:
+            try: del pdf  # free intermediate DataFrame per iteration
+            except: pass
 
     if not records:
         return pd.DataFrame()
@@ -2642,7 +2647,7 @@ def show_clickable_table(df_display, table_key, active_db, priority_df):
     df_clean = df_clean[cols_order].copy()
     
     event = st.dataframe(
-        df_clean.style.map(color_score, subset=['Risk Score']),
+        df_clean,  # ไม่ใช้ style.map — ลด memory overhead ต่อทุก cell
         use_container_width=True, on_select="rerun", selection_mode="single-row", hide_index=True,
         key=f"tbl_{table_key}",
         column_config={
@@ -3187,6 +3192,7 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
                 
         if not historical_db_pl.is_empty():
             active_db_all = historical_db_pl.to_pandas()
+            del historical_db_pl; import gc as _gc; _gc.collect()  # free Polars copy immediately
             _sel_date = pd.to_datetime(selected_date).date()
             active_db = active_db_all[active_db_all['Datetime'].dt.date == _sel_date].copy()
             if active_db.empty:
