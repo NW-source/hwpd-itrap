@@ -2889,6 +2889,9 @@ if mode == "⚙️ แอดมิน (Admin Portal)":
                                 st.success(f"✅ ประมวลผลสำเร็จ! ข้อมูลถูกบันทึกลงฐานข้อมูลเรียบร้อยแล้ว (Report Date: {report_date})")
                                 st.session_state.dq_preview = None 
                                 
+                                # เคลียร์ cache ของ realtime session เพื่อให้โหลดข้อมูลใหม่ทันที
+                                load_realtime_session.clear()
+                                
                                 st.session_state['nav_tab'] = "🏠 สรุปสถานการณ์ (Overview)"
                                 time.sleep(1.5)
                                 st.rerun()
@@ -3723,4 +3726,29 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
                 show_watch_list(active_db, selected_date)
 
         else:
-            st.success("🟢 ไม่พบข้อมูลเป้าหมายเฝ้าระวังความเสี่ยงสูง (>80%) ในวันที่เลือก")
+            # filtered_df ว่าง — แต่ถ้าวันนี้ ให้ลองแสดง Realtime tab ก่อน
+            from datetime import timezone as _tz_mod
+            _tz_th_fb = _tz_mod(timedelta(hours=7))
+            _today_str_fb = datetime.now(_tz_th_fb).strftime('%Y-%m-%d')
+            _sel_str_fb   = str(selected_date)[:10]
+
+            if (_sel_str_fb == _today_str_fb and
+                    st.session_state.get('nav_tab', '') == "🏠 สรุปสถานการณ์ (Overview)"):
+                # ลองดึง Realtime session (เคลียร์ cache ก่อนเพื่อให้ได้ข้อมูลล่าสุด)
+                load_realtime_session.clear()
+                _rt_fb = load_realtime_session(_today_str_fb)
+                if _rt_fb and not _rt_fb['df'].empty:
+                    st.info("📊 ข้อมูล Realtime พร้อมแล้ว — รอผลการประมวลผล (score ≥ 80%) อาจใช้เวลาสักครู่")
+                    try:
+                        render_realtime_tab(_today_str_fb, _rt_fb['df'], priority_df)
+                    except Exception as _rte_fb:
+                        st.error(f"❌ Realtime Error: {_rte_fb}")
+                else:
+                    _load_err_fb = st.session_state.pop('_rt_load_error', None)
+                    if _load_err_fb:
+                        st.error("❌ โหลด Realtime ไม่สำเร็จ:")
+                        st.code(_load_err_fb)
+                    else:
+                        st.success("🟢 ไม่พบข้อมูลเป้าหมายเฝ้าระวัง (>80%) และยังไม่มี Realtime Session วันนี้")
+            else:
+                st.success("🟢 ไม่พบข้อมูลเป้าหมายเฝ้าระวังความเสี่ยงสูง (>80%) ในวันที่เลือก")
