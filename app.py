@@ -1751,7 +1751,7 @@ def run_intelligence_orchestrator(active_db_pl,
                 "ผ่านร่วมกัน (ด่าน)": data["cams"],
                 "ระยะห่างเฉลี่ย": data["gap"], 
                 "Risk Score": min(100, data["score"]),
-                "ระดับ": "🔴 ยืนยัน" if min(100, data["score"]) >= 90 else "🟡 น่าสงสัย",
+                "ระดับ": "🔴 ยืนยัน" if min(100, data["score"]) >= 85 else "🟡 น่าสงสัย",
             "Apex_Flag": "👑 APEX" if is_apex else "",
             "Apex_Boost": f"+{int(data["score"] * 0.15)}" if is_apex else "0",
                 "จุดตรวจพบล่าสุด": f"📍 {last_row['จุดติดตั้งกล้อง']}", 
@@ -2179,9 +2179,9 @@ def render_case_dossier(selected_target, active_db, priority_df):
     if active_db is None or active_db.empty or 'ทะเบียน_Full' not in active_db.columns:
         st.info("⚠️ ไม่พบข้อมูลรายละเอียด — กรุณาโหลดข้อมูลวันที่เลือกใหม่อีกครั้งผ่าน Admin Portal")
         return
-    _target_rows = priority_df[priority_df['Target_ID'] == selected_target]
+    _target_rows = priority_df[priority_df['Target_ID'].astype(str).str.strip() == str(selected_target).strip()]
     if _target_rows.empty:
-        st.warning(f"⚠️ ไม่พบเป้าหมาย '{selected_target}' ในข้อมูลที่โหลดอยู่ — กรุณาเลือกวันที่ใหม่หรือ Refresh หน้า")
+        st.warning(f"⚠️ ไม่พบเป้าหมาย 'โปรด Refresh หน้าหรือ Upload ไฟล์ใหม่'")
         return
     target_info = _target_rows.iloc[0]
     cars = target_info['Cars_List']
@@ -2572,6 +2572,9 @@ def show_clickable_table(df_display, table_key, active_db, priority_df):
     # กรอง cols_order ให้เฉพาะที่มีใน df_clean (ป้องกัน KeyError)
     cols_order = [c for c in cols_order if c in df_clean.columns]
         
+    # บันทึก Target_ID map ก่อนตัดคอลัมน์ (ป้องกัน index mismatch หลัง merge)
+    _id_map = {i: str(df_clean.iloc[i]['Target_ID']).strip()
+               for i in range(len(df_clean)) if 'Target_ID' in df_clean.columns}
     df_clean = df_clean[cols_order].copy()
     
     event = st.dataframe(
@@ -2591,8 +2594,11 @@ def show_clickable_table(df_display, table_key, active_db, priority_df):
     
     if len(event.selection.rows) > 0:
         selected_idx = event.selection.rows[0]
-        target_id = df_display.iloc[selected_idx]['Target_ID']
-        render_case_dossier(target_id, active_db, priority_df)
+        target_id = _id_map.get(selected_idx, '')
+        if not target_id:
+            st.warning("⚠️ ไม่สามารถระบุเป้าหมายได้ กรุณา Refresh")
+        else:
+            render_case_dossier(target_id, active_db, priority_df)
 
 # ==========================================
 # 5. สถาปัตยกรรมหน้าจอหลัก (Decoupled UI)
@@ -3391,10 +3397,9 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
                         _wconn.close()
                     except: _watch_today = 0
 
-                    # ══ Metric Cards ══
-                    _confirmed_df = filtered_df[filtered_df.get('ระดับ', pd.Series(['🔴 ยืนยัน']*len(filtered_df))) == '🔴 ยืนยัน'] if 'ระดับ' in filtered_df.columns else filtered_df
+                    # ══ Metric Cards (5 การ์ด) ══
                     _suspect_df   = filtered_df[filtered_df['ระดับ'] == '🟡 น่าสงสัย'] if 'ระดับ' in filtered_df.columns else pd.DataFrame()
-                    col1, col2, col3, col4, col5, col6 = st.columns(6)
+                    col1, col2, col3, col4, col5 = st.columns(5)
                     with col1: st.markdown(f"<div class='metric-card card-apex'><div class='metric-label'>🚨 ระดับสูงสุด</div><div class='metric-value'>{len(apex_df)}</div></div>", unsafe_allow_html=True)
                     with col2:
                         st.markdown(f"<div class='metric-card card-clone'><div class='metric-label'>🚗 สวมทะเบียน</div><div class='metric-value'>{cat_cloned}</div></div>", unsafe_allow_html=True)
@@ -3406,20 +3411,18 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
                         st.markdown(f"<div class='metric-card card-anomaly'><div class='metric-label'>🔄 รถต้องสงสัย</div><div class='metric-value'>{cat_others}</div></div>", unsafe_allow_html=True)
                         if st.button("🔍 เจาะลึก", key="btn_anomaly_d", use_container_width=True): change_tab("🔄 พฤติกรรมมุดชายแดน"); st.rerun()
                     with col5:
-                        st.markdown(f"<div class='metric-card' style='border-left:4px solid #f59e0b;background:rgba(245,158,11,0.1)'><div class='metric-label'>🟡 น่าสงสัย (80-89)</div><div class='metric-value' style='color:#f59e0b'>{len(_suspect_df)}</div></div>", unsafe_allow_html=True)
-                    with col6:
                         st.markdown(f"<div class='metric-card card-watch'><div class='metric-label'>⭐ Watch List วันนี้</div><div class='metric-value'>{_watch_today}</div></div>", unsafe_allow_html=True)
                         if st.button("🔍 เจาะลึก", key="btn_watch_d", use_container_width=True): change_tab("⭐ รถที่น่าสนใจ"); st.rerun()
 
-                    # ── แสดงตาราง 🟡 น่าสงสัย ถ้ามี ──────────────────────────────────────
+                    # ── ตาราง 🟡 น่าสงสัย (score 80-84) ─────────────────────────────────────────
                     if not _suspect_df.empty:
                         st.markdown("---")
                         st.markdown("""
                         <div style='background:rgba(245,158,11,0.1);border-left:4px solid #f59e0b;
                              padding:12px 16px;border-radius:8px;margin-bottom:12px'>
-                            🟡 <b>เป้าหมายระดับน่าสงสัย (Score 80–89)</b> — จับตาใกล้ชิด ยังไม่ถึงเกณฑ์ยืนยัน
+                            🟡 <b>เป้าหมายระดับน่าสงสัย (Score 80–84)</b> — จับตาใกล้ชิด ยังไม่ถึงเกณฑ์ยืนยัน
                         </div>""", unsafe_allow_html=True)
-                        show_clickable_table(_suspect_df, "t_suspect", active_db, filtered_df)
+                        show_clickable_table(_suspect_df.reset_index(drop=True), "t_suspect", active_db, filtered_df)
 
 
 

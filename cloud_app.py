@@ -1857,7 +1857,7 @@ def run_intelligence_orchestrator(active_db_pl,
                 "ผ่านร่วมกัน (ด่าน)": data["cams"],
                 "ระยะห่างเฉลี่ย": data["gap"],
                 "Risk Score": min(100, data["score"]),
-                "ระดับ": "🔴 ยืนยัน" if min(100, data["score"]) >= 90 else "🟡 น่าสงสัย",
+                "ระดับ": "🔴 ยืนยัน" if min(100, data["score"]) >= 85 else "🟡 น่าสงสัย",
             "Apex_Flag": "👑 APEX" if is_apex else "",
             "Apex_Boost": f"+{int(data['score'] * 0.15)}" if is_apex else "0",
                 "จุดตรวจพบล่าสุด": f"📍 {last_row['จุดติดตั้งกล้อง']}",
@@ -2291,9 +2291,9 @@ def render_case_dossier(selected_target, active_db, priority_df):
     if active_db is None or active_db.empty or 'ทะเบียน_Full' not in active_db.columns:
         st.info("⚠️ ไม่พบข้อมูลรายละเอียด — กรุณาโหลดข้อมูลวันที่เลือกใหม่อีกครั้งผ่าน Admin Portal")
         return
-    _target_rows = priority_df[priority_df['Target_ID'] == selected_target]
+    _target_rows = priority_df[priority_df['Target_ID'].astype(str).str.strip() == str(selected_target).strip()]
     if _target_rows.empty:
-        st.warning(f"⚠️ ไม่พบเป้าหมาย '{selected_target}' ในข้อมูลที่โหลดอยู่ — กรุณาเลือกวันที่ใหม่หรือ Refresh หน้า")
+        st.warning(f"⚠️ ไม่พบเป้าหมาย 'โปรด Refresh หน้าหรือ Upload ไฟล์ใหม่'")
         return
     target_info = _target_rows.iloc[0]
     cars = target_info['Cars_List']
@@ -2647,17 +2647,21 @@ def show_clickable_table(df_display, table_key, active_db, priority_df):
     df_clean['Risk Score'] = df_clean['Risk Score'].fillna(0).astype(int).astype(str) + "%"
     
     if table_key == "t_cloned":
-        cols_order = ['สถานะ', 'เป้าหมาย', 'Speed_Warp', 'เวลาโผล่ล่าสุด', 'จุดตรวจพบล่าสุด', 'พฤติกรรมต้องสงสัย', 'Risk Score']
+        cols_order = ['สถานะ', 'ระดับ', 'เป้าหมาย', 'Speed_Warp', 'เวลาโผล่ล่าสุด', 'จุดตรวจพบล่าสุด', 'พฤติกรรมต้องสงสัย', 'Risk Score']
         df_clean = df_clean.rename(columns={'Speed_Warp': 'ความเร็วที่ผิดปกติ (กม./ชม.)'})
-        cols_order[2] = 'ความเร็วที่ผิดปกติ (กม./ชม.)'
+        cols_order[3] = 'ความเร็วที่ผิดปกติ (กม./ชม.)'
     elif table_key == "t_others":
-        cols_order = ['สถานะ', 'เป้าหมาย', 'ผ่านร่วมกัน (ด่าน)', 'Total_Dist', 'จุดตรวจพบล่าสุด', 'พฤติกรรมต้องสงสัย', 'Risk Score']
+        cols_order = ['สถานะ', 'ระดับ', 'เป้าหมาย', 'ผ่านร่วมกัน (ด่าน)', 'Total_Dist', 'จุดตรวจพบล่าสุด', 'พฤติกรรมต้องสงสัย', 'Risk Score']
         df_clean = df_clean.rename(columns={'ผ่านร่วมกัน (ด่าน)': 'จำนวนด่านที่ผ่าน (ด่าน)', 'Total_Dist': 'ระยะทางสะสม (กม.)'})
-        cols_order[2] = 'จำนวนด่านที่ผ่าน (ด่าน)'
-        cols_order[3] = 'ระยะทางสะสม (กม.)'
+        cols_order[3] = 'จำนวนด่านที่ผ่าน (ด่าน)'
+        cols_order[4] = 'ระยะทางสะสม (กม.)'
     else:
-        cols_order = ['สถานะ', 'เป้าหมาย', 'ผ่านร่วมกัน (ด่าน)', 'ระยะห่างเฉลี่ย', 'จุดตรวจพบล่าสุด', 'พฤติกรรมต้องสงสัย', 'Risk Score']
-        
+        cols_order = ['สถานะ', 'ระดับ', 'เป้าหมาย', 'ผ่านร่วมกัน (ด่าน)', 'ระยะห่างเฉลี่ย', 'จุดตรวจพบล่าสุด', 'พฤติกรรมต้องสงสัย', 'Risk Score']
+    # กรอง cols_order ให้เฉพาะที่มีใน df_clean
+    cols_order = [c for c in cols_order if c in df_clean.columns]
+    # บันทึก Target_ID map ก่อนตัดคอลัมน์
+    _id_map = {i: str(df_clean.iloc[i]['Target_ID']).strip()
+               for i in range(len(df_clean)) if 'Target_ID' in df_clean.columns}
     df_clean = df_clean[cols_order].copy()
     
     event = st.dataframe(
@@ -2677,8 +2681,11 @@ def show_clickable_table(df_display, table_key, active_db, priority_df):
     
     if len(event.selection.rows) > 0:
         selected_idx = event.selection.rows[0]
-        target_id = df_display.iloc[selected_idx]['Target_ID']
-        render_case_dossier(target_id, active_db, priority_df)
+        target_id = _id_map.get(selected_idx, '')
+        if not target_id:
+            st.warning("⚠️ ไม่สามารถระบุเป้าหมายได้ กรุณา Refresh")
+        else:
+            render_case_dossier(target_id, active_db, priority_df)
 
 # ==========================================
 # 5. สถาปัตยกรรมหน้าจอหลัก (Decoupled UI)
@@ -3475,6 +3482,17 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
 })();
 </script>""",height=0)
                         
+                    # ── ตาราง 🟡 น่าสงสัย (score 80-84) ────────────────────────────
+                    _suspect_df = filtered_df[filtered_df['ระดับ'] == '🟡 น่าสงสัย'] if 'ระดับ' in filtered_df.columns else pd.DataFrame()
+                    if not _suspect_df.empty:
+                        st.markdown("---")
+                        st.markdown("""
+                        <div style='background:rgba(245,158,11,0.1);border-left:4px solid #f59e0b;
+                             padding:12px 16px;border-radius:8px;margin-bottom:12px'>
+                            🟡 <b>เป้าหมายระดับน่าสงสัย (Score 80–84)</b> — จับตาใกล้ชิด ยังไม่ถึงเกณฑ์ยืนยัน
+                        </div>""", unsafe_allow_html=True)
+                        show_clickable_table(_suspect_df.reset_index(drop=True), "t_suspect", active_db, filtered_df)
+
                 with tab_repeat:
                     if _sel_str != _today_str:
                         st.empty()
