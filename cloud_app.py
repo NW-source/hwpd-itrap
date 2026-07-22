@@ -3340,8 +3340,15 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
             cat_cloned = len(filtered_df[filtered_df['ประเภท'] == "กลุ่มเป้าหมายสวมทะเบียน"])
             cat_convoy_car = len(filtered_df[filtered_df['ประเภท'] == "กลุ่มรถยนต์เคลื่อนที่แบบขบวน"])
             cat_others = len(filtered_df[filtered_df['ประเภท'] == "กลุ่มรถต้องสงสัย"])
-            # คำนวณ apex_df ก่อน nav_tab check เพื่อให้ทุกหน้าเข้าถึงได้
+            # คำนวณ apex_df และ _watch_today ก่อน nav_tab check เพื่อให้ทุกหน้าเข้าถึงได้
             apex_df = filtered_df[filtered_df['ประเภท'] == "กลุ่มเป้าหมายความมั่นคงระดับสูงสุด"].copy()
+            try:
+                _wconn2 = sqlite3.connect(DB_PATH)
+                _wl_df2 = pd.read_sql("SELECT plate FROM historical_suspects WHERE seen_count >= 1", _wconn2)
+                _today_plates2 = set(active_db['ทะเบียน_Full'].unique()) if not active_db.empty else set()
+                _watch_today = len(_wl_df2[_wl_df2['plate'].isin(_today_plates2)]) if not _wl_df2.empty else 0
+                _wconn2.close()
+            except: _watch_today = 0
 
             if st.session_state['nav_tab'] == "🏠 สรุปสถานการณ์ (Overview)":
                 
