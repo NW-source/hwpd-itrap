@@ -1857,6 +1857,7 @@ def run_intelligence_orchestrator(active_db_pl,
                 "ผ่านร่วมกัน (ด่าน)": data["cams"],
                 "ระยะห่างเฉลี่ย": data["gap"],
                 "Risk Score": min(100, data["score"]),
+                "ระดับ": "🔴 ยืนยัน" if min(100, data["score"]) >= 90 else "🟡 น่าสงสัย",
             "Apex_Flag": "👑 APEX" if is_apex else "",
             "Apex_Boost": f"+{int(data['score'] * 0.15)}" if is_apex else "0",
                 "จุดตรวจพบล่าสุด": f"📍 {last_row['จุดติดตั้งกล้อง']}",
@@ -1871,7 +1872,7 @@ def run_intelligence_orchestrator(active_db_pl,
     if priority_list:
         return pd.DataFrame(priority_list).sort_values(by="Risk Score", ascending=False).reset_index(drop=True)
     else:
-        return pd.DataFrame(columns=["Target_ID", "เป้าหมาย", "ประเภท", "พฤติกรรมต้องสงสัย", "ผ่านร่วมกัน (ด่าน)", "ระยะห่างเฉลี่ย", "Risk Score", "จุดตรวจพบล่าสุด", "เวลาโผล่ล่าสุด", "Cars_List", "Radar_Data", "Speed_Warp", "Total_Dist"])
+        return pd.DataFrame(columns=["Target_ID", "เป้าหมาย", "ประเภท", "พฤติกรรมต้องสงสัย", "ผ่านร่วมกัน (ด่าน)", "ระยะห่างเฉลี่ย", "Risk Score", "ระดับ", "จุดตรวจพบล่าสุด", "เวลาโผล่ล่าสุด", "Cars_List", "Radar_Data", "Speed_Warp", "Total_Dist"])
 
 # ==========================================
 # 4. ส่วนแสดงผลปฏิบัติการ (Dashboard & UI)
@@ -2827,7 +2828,11 @@ if mode == "⚙️ แอดมิน (Admin Portal)":
                                 st.caption(f"📊 วิเคราะห์ข้อมูลรวม {len(active_db_pl_for_date):,} รายการ"
                                            f" (วัน {report_date} — ใหม่ {len(new_db_pl):,} + Cloud {len(cloud_db_pl) if cloud_db_pl is not None else 0:,} + Local เดิม)")
 
-                                priority_df = run_intelligence_orchestrator(active_db_pl_for_date)
+                                priority_df = run_intelligence_orchestrator(
+                                    active_db_pl_for_date,
+                                    e2_cam_pre=4, e2_shared=4, e2_dist=100, e2_score=80,
+                                    e3_cams=5,   e3_dist=150, e3_score=80
+                                )
 
                                 active_db_pd = active_db_pl_for_date.to_pandas()
                                 save_daily_report(report_date, priority_df, active_db_pd)

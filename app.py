@@ -1751,6 +1751,7 @@ def run_intelligence_orchestrator(active_db_pl,
                 "ผ่านร่วมกัน (ด่าน)": data["cams"],
                 "ระยะห่างเฉลี่ย": data["gap"], 
                 "Risk Score": min(100, data["score"]),
+                "ระดับ": "🔴 ยืนยัน" if min(100, data["score"]) >= 90 else "🟡 น่าสงสัย",
             "Apex_Flag": "👑 APEX" if is_apex else "",
             "Apex_Boost": f"+{int(data["score"] * 0.15)}" if is_apex else "0",
                 "จุดตรวจพบล่าสุด": f"📍 {last_row['จุดติดตั้งกล้อง']}", 
@@ -1765,7 +1766,7 @@ def run_intelligence_orchestrator(active_db_pl,
     if priority_list:
         return pd.DataFrame(priority_list).sort_values(by="Risk Score", ascending=False).reset_index(drop=True)
     else:
-        return pd.DataFrame(columns=["Target_ID", "เป้าหมาย", "ประเภท", "พฤติกรรมต้องสงสัย", "ผ่านร่วมกัน (ด่าน)", "ระยะห่างเฉลี่ย", "Risk Score", "จุดตรวจพบล่าสุด", "เวลาโผล่ล่าสุด", "Cars_List", "Radar_Data", "Speed_Warp", "Total_Dist", "Apex_Flag", "Apex_Boost"])
+        return pd.DataFrame(columns=["Target_ID", "เป้าหมาย", "ประเภท", "พฤติกรรมต้องสงสัย", "ผ่านร่วมกัน (ด่าน)", "ระยะห่างเฉลี่ย", "Risk Score", "ระดับ", "จุดตรวจพบล่าสุด", "เวลาโผล่ล่าสุด", "Cars_List", "Radar_Data", "Speed_Warp", "Total_Dist", "Apex_Flag", "Apex_Boost"])
 
 # ==========================================
 # 4. ส่วนแสดงผลปฏิบัติการ (Dashboard & UI)
@@ -2558,16 +2559,18 @@ def show_clickable_table(df_display, table_key, active_db, priority_df):
     df_clean['Risk Score'] = df_clean['Risk Score'].fillna(0).astype(int).astype(str) + "%"
     
     if table_key == "t_cloned":
-        cols_order = ['สถานะ', 'เป้าหมาย', 'Speed_Warp', 'เวลาโผล่ล่าสุด', 'จุดตรวจพบล่าสุด', 'พฤติกรรมต้องสงสัย', 'Risk Score']
+        cols_order = ['สถานะ', 'ระดับ', 'เป้าหมาย', 'Speed_Warp', 'เวลาโผล่ล่าสุด', 'จุดตรวจพบล่าสุด', 'พฤติกรรมต้องสงสัย', 'Risk Score']
         df_clean = df_clean.rename(columns={'Speed_Warp': 'ความเร็วที่ผิดปกติ (กม./ชม.)'})
-        cols_order[2] = 'ความเร็วที่ผิดปกติ (กม./ชม.)'
+        cols_order[3] = 'ความเร็วที่ผิดปกติ (กม./ชม.)'
     elif table_key == "t_others":
-        cols_order = ['สถานะ', 'เป้าหมาย', 'ผ่านร่วมกัน (ด่าน)', 'Total_Dist', 'จุดตรวจพบล่าสุด', 'พฤติกรรมต้องสงสัย', 'Risk Score']
+        cols_order = ['สถานะ', 'ระดับ', 'เป้าหมาย', 'ผ่านร่วมกัน (ด่าน)', 'Total_Dist', 'จุดตรวจพบล่าสุด', 'พฤติกรรมต้องสงสัย', 'Risk Score']
         df_clean = df_clean.rename(columns={'ผ่านร่วมกัน (ด่าน)': 'จำนวนด่านที่ผ่าน (ด่าน)', 'Total_Dist': 'ระยะทางสะสม (กม.)'})
-        cols_order[2] = 'จำนวนด่านที่ผ่าน (ด่าน)'
-        cols_order[3] = 'ระยะทางสะสม (กม.)'
+        cols_order[3] = 'จำนวนด่านที่ผ่าน (ด่าน)'
+        cols_order[4] = 'ระยะทางสะสม (กม.)'
     else:
-        cols_order = ['สถานะ', 'เป้าหมาย', 'ผ่านร่วมกัน (ด่าน)', 'ระยะห่างเฉลี่ย', 'จุดตรวจพบล่าสุด', 'พฤติกรรมต้องสงสัย', 'Risk Score']
+        cols_order = ['สถานะ', 'ระดับ', 'เป้าหมาย', 'ผ่านร่วมกัน (ด่าน)', 'ระยะห่างเฉลี่ย', 'จุดตรวจพบล่าสุด', 'พฤติกรรมต้องสงสัย', 'Risk Score']
+    # กรอง cols_order ให้เฉพาะที่มีใน df_clean (ป้องกัน KeyError)
+    cols_order = [c for c in cols_order if c in df_clean.columns]
         
     df_clean = df_clean[cols_order].copy()
     
@@ -2735,7 +2738,11 @@ if mode == "⚙️ แอดมิน (Admin Portal)":
                                 st.caption(f"📊 วิเคราะห์ข้อมูลรวม {len(active_db_pl_for_date):,} รายการ"
                                            f" (วัน {report_date} — ใหม่ {len(new_db_pl):,} + Cloud {len(cloud_db_pl) if cloud_db_pl is not None else 0:,} + Local เดิม)")
 
-                                priority_df = run_intelligence_orchestrator(active_db_pl_for_date)
+                                priority_df = run_intelligence_orchestrator(
+                                    active_db_pl_for_date,
+                                    e2_cam_pre=4, e2_shared=4, e2_dist=100, e2_score=80,
+                                    e3_cams=5,   e3_dist=150, e3_score=80
+                                )
 
                                 active_db_pd = active_db_pl_for_date.to_pandas()
                                 save_daily_report(report_date, priority_df, active_db_pd)
@@ -3385,7 +3392,9 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
                     except: _watch_today = 0
 
                     # ══ Metric Cards ══
-                    col1, col2, col3, col4, col5 = st.columns(5)
+                    _confirmed_df = filtered_df[filtered_df.get('ระดับ', pd.Series(['🔴 ยืนยัน']*len(filtered_df))) == '🔴 ยืนยัน'] if 'ระดับ' in filtered_df.columns else filtered_df
+                    _suspect_df   = filtered_df[filtered_df['ระดับ'] == '🟡 น่าสงสัย'] if 'ระดับ' in filtered_df.columns else pd.DataFrame()
+                    col1, col2, col3, col4, col5, col6 = st.columns(6)
                     with col1: st.markdown(f"<div class='metric-card card-apex'><div class='metric-label'>🚨 ระดับสูงสุด</div><div class='metric-value'>{len(apex_df)}</div></div>", unsafe_allow_html=True)
                     with col2:
                         st.markdown(f"<div class='metric-card card-clone'><div class='metric-label'>🚗 สวมทะเบียน</div><div class='metric-value'>{cat_cloned}</div></div>", unsafe_allow_html=True)
@@ -3397,8 +3406,20 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
                         st.markdown(f"<div class='metric-card card-anomaly'><div class='metric-label'>🔄 รถต้องสงสัย</div><div class='metric-value'>{cat_others}</div></div>", unsafe_allow_html=True)
                         if st.button("🔍 เจาะลึก", key="btn_anomaly_d", use_container_width=True): change_tab("🔄 พฤติกรรมมุดชายแดน"); st.rerun()
                     with col5:
+                        st.markdown(f"<div class='metric-card' style='border-left:4px solid #f59e0b;background:rgba(245,158,11,0.1)'><div class='metric-label'>🟡 น่าสงสัย (80-89)</div><div class='metric-value' style='color:#f59e0b'>{len(_suspect_df)}</div></div>", unsafe_allow_html=True)
+                    with col6:
                         st.markdown(f"<div class='metric-card card-watch'><div class='metric-label'>⭐ Watch List วันนี้</div><div class='metric-value'>{_watch_today}</div></div>", unsafe_allow_html=True)
                         if st.button("🔍 เจาะลึก", key="btn_watch_d", use_container_width=True): change_tab("⭐ รถที่น่าสนใจ"); st.rerun()
+
+                    # ── แสดงตาราง 🟡 น่าสงสัย ถ้ามี ──────────────────────────────────────
+                    if not _suspect_df.empty:
+                        st.markdown("---")
+                        st.markdown("""
+                        <div style='background:rgba(245,158,11,0.1);border-left:4px solid #f59e0b;
+                             padding:12px 16px;border-radius:8px;margin-bottom:12px'>
+                            🟡 <b>เป้าหมายระดับน่าสงสัย (Score 80–89)</b> — จับตาใกล้ชิด ยังไม่ถึงเกณฑ์ยืนยัน
+                        </div>""", unsafe_allow_html=True)
+                        show_clickable_table(_suspect_df, "t_suspect", active_db, filtered_df)
 
 
 
