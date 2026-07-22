@@ -2684,8 +2684,16 @@ def show_clickable_table(df_display, table_key, active_db, priority_df):
         if not target_id:
             st.warning("⚠️ ไม่สามารถระบุเป้าหมายได้ กรุณา Refresh")
         else:
+            # ── ปุ่มกลับ: clear dataframe selection แล้ว rerun ──
+            st.markdown("---")
+            _bcol, _ = st.columns([1, 5])
+            with _bcol:
+                if st.button("🔙 ปิดรายละเอียด", key=f"back_{table_key}", use_container_width=True):
+                    st.session_state[f"tbl_{table_key}"] = {"selection": {"rows": [], "columns": []}}
+                    st.rerun()
             # ใช้ df_display เป็น lookup source เสมอเจอ Target_ID
             render_case_dossier(target_id, active_db, df_display)
+
 
 # ==========================================
 # 5. สถาปัตยกรรมหน้าจอหลัก (Decoupled UI)
