@@ -2172,7 +2172,6 @@ def _build_tactical_map_html(lat_mean: float, lon_mean: float,
     return m.get_root().render()
 
 
-@st.fragment
 def render_case_dossier(selected_target, active_db, priority_df):
     # Safety: หาก active_db ไม่มีคอลัมน์ที่ต้องการ
 
@@ -3398,7 +3397,8 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
                     except: _watch_today = 0
 
                     # ══ Metric Cards (5 การ์ด) ══
-                    _suspect_df   = filtered_df[filtered_df['ระดับ'] == '🟡 น่าสงสัย'] if 'ระดับ' in filtered_df.columns else pd.DataFrame()
+                    # คำนวณ _suspect_df สำหรับใช้ใน Tab เจาะลึก (ไม่แสดงใน Overview)
+                    _suspect_df = filtered_df[filtered_df['ระดับ'] == '🟡 น่าสงสัย'] if 'ระดับ' in filtered_df.columns else pd.DataFrame()
                     col1, col2, col3, col4, col5 = st.columns(5)
                     with col1: st.markdown(f"<div class='metric-card card-apex'><div class='metric-label'>🚨 ระดับสูงสุด</div><div class='metric-value'>{len(apex_df)}</div></div>", unsafe_allow_html=True)
                     with col2:
@@ -3414,15 +3414,7 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
                         st.markdown(f"<div class='metric-card card-watch'><div class='metric-label'>⭐ Watch List วันนี้</div><div class='metric-value'>{_watch_today}</div></div>", unsafe_allow_html=True)
                         if st.button("🔍 เจาะลึก", key="btn_watch_d", use_container_width=True): change_tab("⭐ รถที่น่าสนใจ"); st.rerun()
 
-                    # ── ตาราง 🟡 น่าสงสัย (score 80-84) ─────────────────────────────────────────
-                    if not _suspect_df.empty:
-                        st.markdown("---")
-                        st.markdown("""
-                        <div style='background:rgba(245,158,11,0.1);border-left:4px solid #f59e0b;
-                             padding:12px 16px;border-radius:8px;margin-bottom:12px'>
-                            🟡 <b>เป้าหมายระดับน่าสงสัย (Score 80–84)</b> — จับตาใกล้ชิด ยังไม่ถึงเกณฑ์ยืนยัน
-                        </div>""", unsafe_allow_html=True)
-                        show_clickable_table(_suspect_df.reset_index(drop=True), "t_suspect", active_db, filtered_df)
+
 
 
 
