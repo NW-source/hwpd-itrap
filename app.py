@@ -3092,10 +3092,10 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
             cat_cloned = len(filtered_df[filtered_df['ประเภท'] == "กลุ่มเป้าหมายสวมทะเบียน"])
             cat_convoy_car = len(filtered_df[filtered_df['ประเภท'] == "กลุ่มรถยนต์เคลื่อนที่แบบขบวน"])
             cat_others = len(filtered_df[filtered_df['ประเภท'] == "กลุ่มรถต้องสงสัย"])
+            # คำนวณ apex_df ก่อน nav_tab check เพื่อให้ทุกหน้าเข้าถึงได้
+            apex_df = filtered_df[filtered_df['ประเภท'] == "กลุ่มเป้าหมายความมั่นคงระดับสูงสุด"].copy()
             
             if st.session_state['nav_tab'] == "🏠 สรุปสถานการณ์ (Overview)":
-                
-                apex_df = filtered_df[filtered_df['ประเภท'] == "กลุ่มเป้าหมายความมั่นคงระดับสูงสุด"].copy()
                 if not apex_df.empty:
                     st.markdown("""
                     <div class='apex-threat-banner'>
