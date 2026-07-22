@@ -2663,6 +2663,11 @@ def show_clickable_table(df_display, table_key, active_db, priority_df):
                for i in range(len(df_clean)) if 'Target_ID' in df_clean.columns}
     df_clean = df_clean[cols_order].copy()
     
+    # Phase 1: ถ้า back ถูกขอส่ง run ก่อน ให้ init widget state ก่อนสร้าง (Streamlit อนุญาต)
+    _back_req_key = f"back_req_{table_key}"
+    if st.session_state.pop(_back_req_key, False):
+        st.session_state[f"tbl_{table_key}"] = {"selection": {"rows": [], "columns": []}}
+
     event = st.dataframe(
         df_clean,  # ไม่ใช้ style.map — ลด memory overhead ต่อทุก cell
         use_container_width=True, on_select="rerun", selection_mode="single-row", hide_index=True,
@@ -2684,12 +2689,12 @@ def show_clickable_table(df_display, table_key, active_db, priority_df):
         if not target_id:
             st.warning("⚠️ ไม่สามารถระบุเป้าหมายได้ กรุณา Refresh")
         else:
-            # ── ปุ่มกลับ: clear dataframe selection แล้ว rerun ──
+            # Phase 2: ปุ่ม back ตั้ง back_req (ไม่ใช่ widget key โดยตรง) แล้ว rerun
             st.markdown("---")
             _bcol, _ = st.columns([1, 5])
             with _bcol:
                 if st.button("🔙 ปิดรายละเอียด", key=f"back_{table_key}", use_container_width=True):
-                    st.session_state[f"tbl_{table_key}"] = {"selection": {"rows": [], "columns": []}}
+                    st.session_state[_back_req_key] = True  # ตั้ง key แยก (ไม่ใช่ widget key)
                     st.rerun()
             # ใช้ df_display เป็น lookup source เสมอเจอ Target_ID
             render_case_dossier(target_id, active_db, df_display)
@@ -3677,14 +3682,32 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
                             st.dataframe(pd.DataFrame(metrics['tactical_table']), use_container_width=True, hide_index=True)
 
             elif st.session_state['nav_tab'] == "🚨 รถสวมทะเบียน":
+                _mb1,_mb2,_mb3,_mb4,_mb5 = st.columns(5)
+                with _mb1: st.markdown(f"<div class='metric-card card-apex'><div class='metric-label'>🚨 ระดับสูงสุด</div><div class='metric-value'>{len(apex_df)}</div></div>", unsafe_allow_html=True)
+                with _mb2: st.markdown(f"<div class='metric-card card-clone'><div class='metric-label'>🚗 สวมทะเบียน</div><div class='metric-value'>{cat_cloned}</div></div>", unsafe_allow_html=True)
+                with _mb3: st.markdown(f"<div class='metric-card card-car'><div class='metric-label'>🏎️ ขบวนรถยนต์</div><div class='metric-value'>{cat_convoy_car}</div></div>", unsafe_allow_html=True)
+                with _mb4: st.markdown(f"<div class='metric-card card-anomaly'><div class='metric-label'>🔄 ต้องสงสัย</div><div class='metric-value'>{cat_others}</div></div>", unsafe_allow_html=True)
+                with _mb5: st.markdown(f"<div class='metric-card card-watch'><div class='metric-label'>⭐ Watch List</div><div class='metric-value'>{_watch_today}</div></div>", unsafe_allow_html=True)
                 st.markdown("<div class='risk-orange'>🚨 รายงานเจาะลึก: กลุ่มเป้าหมายสวมทะเบียน (อัตราเร็วเหนือขีดจำกัดทางกายภาพ)</div><br>", unsafe_allow_html=True)
                 show_clickable_table(filtered_df[filtered_df['ประเภท'] == "กลุ่มเป้าหมายสวมทะเบียน"], "t_cloned", active_db, filtered_df)
 
             elif st.session_state['nav_tab'] == "🚘 ขบวนรถลำเลียง":
+                _mb1,_mb2,_mb3,_mb4,_mb5 = st.columns(5)
+                with _mb1: st.markdown(f"<div class='metric-card card-apex'><div class='metric-label'>🚨 ระดับสูงสุด</div><div class='metric-value'>{len(apex_df)}</div></div>", unsafe_allow_html=True)
+                with _mb2: st.markdown(f"<div class='metric-card card-clone'><div class='metric-label'>🚗 สวมทะเบียน</div><div class='metric-value'>{cat_cloned}</div></div>", unsafe_allow_html=True)
+                with _mb3: st.markdown(f"<div class='metric-card card-car'><div class='metric-label'>🏎️ ขบวนรถยนต์</div><div class='metric-value'>{cat_convoy_car}</div></div>", unsafe_allow_html=True)
+                with _mb4: st.markdown(f"<div class='metric-card card-anomaly'><div class='metric-label'>🔄 ต้องสงสัย</div><div class='metric-value'>{cat_others}</div></div>", unsafe_allow_html=True)
+                with _mb5: st.markdown(f"<div class='metric-card card-watch'><div class='metric-label'>⭐ Watch List</div><div class='metric-value'>{_watch_today}</div></div>", unsafe_allow_html=True)
                 st.markdown("<div class='risk-blue'>🏎️ รายงานเจาะลึก: โครงข่ายขบวนรถลำเลียง (พฤติกรรมวิ่งนำ-ตามทางไกล)</div><br>", unsafe_allow_html=True)
                 show_clickable_table(filtered_df[filtered_df['ประเภท'] == "กลุ่มรถยนต์เคลื่อนที่แบบขบวน"], "t_convoy_car", active_db, filtered_df)
 
             elif st.session_state['nav_tab'] == "🔄 พฤติกรรมมุดชายแดน":
+                _mb1,_mb2,_mb3,_mb4,_mb5 = st.columns(5)
+                with _mb1: st.markdown(f"<div class='metric-card card-apex'><div class='metric-label'>🚨 ระดับสูงสุด</div><div class='metric-value'>{len(apex_df)}</div></div>", unsafe_allow_html=True)
+                with _mb2: st.markdown(f"<div class='metric-card card-clone'><div class='metric-label'>🚗 สวมทะเบียน</div><div class='metric-value'>{cat_cloned}</div></div>", unsafe_allow_html=True)
+                with _mb3: st.markdown(f"<div class='metric-card card-car'><div class='metric-label'>🏎️ ขบวนรถยนต์</div><div class='metric-value'>{cat_convoy_car}</div></div>", unsafe_allow_html=True)
+                with _mb4: st.markdown(f"<div class='metric-card card-anomaly'><div class='metric-label'>🔄 ต้องสงสัย</div><div class='metric-value'>{cat_others}</div></div>", unsafe_allow_html=True)
+                with _mb5: st.markdown(f"<div class='metric-card card-watch'><div class='metric-label'>⭐ Watch List</div><div class='metric-value'>{_watch_today}</div></div>", unsafe_allow_html=True)
                 st.markdown("<div class='risk-purple'>🔄 รายงานเจาะลึก: กลุ่มรถต้องสงสัย (วนลูป / แช่ตัว / มุดช่องโหว่)</div><br>", unsafe_allow_html=True)
                 show_clickable_table(filtered_df[filtered_df['ประเภท'] == "กลุ่มรถต้องสงสัย"], "t_others", active_db, filtered_df)
 
