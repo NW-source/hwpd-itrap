@@ -2715,7 +2715,10 @@ def show_clickable_table(df_display, table_key, active_db, priority_df):
     # Phase 1: ถ้า back ถูกขอส่ง run ก่อน ให้ init widget state ก่อนสร้าง (Streamlit อนุญาต)
     _back_req_key = f"back_req_{table_key}"
     if st.session_state.pop(_back_req_key, False):
-        st.session_state[f"tbl_{table_key}"] = {"selection": {"rows": [], "columns": []}}
+        try:
+            st.session_state[f"tbl_{table_key}"] = {"selection": {"rows": [], "columns": []}}
+        except Exception:
+            pass  # widget instantiated แล้วในรอบนี้ — รอ rerun หน้าถัดไป
 
     event = st.dataframe(
         df_clean,  # ไม่ใช้ style.map — ลด memory overhead ต่อทุก cell
@@ -3386,6 +3389,13 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
             metrics = _compute_fallback_metrics(priority_df, active_db)
 
         filtered_df = priority_df[priority_df['Risk Score'].astype(str).str.replace('%', '').astype(float) >= 80].copy() if not priority_df.empty else pd.DataFrame()
+
+        # ── ค่า default เพื่อป้องกัน NameError เมื่อ filtered_df ว่าง ────────────
+        apex_df      = pd.DataFrame()
+        _watch_today = 0
+        cat_cloned   = 0
+        cat_convoy_car = 0
+        cat_others   = 0
 
         if not filtered_df.empty and metrics:
             
