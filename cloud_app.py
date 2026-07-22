@@ -538,8 +538,9 @@ def render_realtime_tab(selected_date: str, rt_active_db: pd.DataFrame, rt_prior
                         render_case_dossier(_fb.iloc[0]['Target_ID'], rt_df, rt_pri)
                         _dossier_shown = True
 
-            # ── 🟡 น่าสงสัย OR 🔴 ที่ dossier lookup ไม่เจอ ────────────────
-            # แสดง Timeline + Camera Stats + ตารางพบ จาก raw data
+            # ── 🟡 น่าสงสัย OR 🔴 ที่ dossier lookup ไม่เจอ ──────────────────
+            # สร้าง synthetic target_info แล้วเรียก render_case_dossier เพื่อให้
+            # ได้ Radar + Intel Summary + Map + Time-Space Diagram + ตาราง เหมือนกัน
             if not _dossier_shown:
                 _plate_val = (_sel['_cars'][0]
                               if isinstance(_sel.get('_cars'), list) and _sel['_cars']
@@ -547,86 +548,41 @@ def render_realtime_tab(selected_date: str, rt_active_db: pd.DataFrame, rt_prior
                 _ph = (rt_df[rt_df['ทะเบียน_Full'] == _plate_val].copy()
                        if 'ทะเบียน_Full' in rt_df.columns else pd.DataFrame())
 
-                if not _ph.empty and 'Datetime' in _ph.columns:
-                    _ph = _ph.sort_values('Datetime')
-                    _cam_col2 = 'จุดติดตั้งกล้อง'
-                    st.markdown("---")
+                if not _ph.empty:
+                    # ── คำนวณ Radar scores จาก raw data ────────────────────────
+                    _n_cams_s  = _ph['จุดติดตั้งกล้อง'].nunique() if 'จุดติดตั้งกล้อง' in _ph.columns else 0
+                    _night_n   = int((_ph['Is_Night'] == True).sum()) if 'Is_Night' in _ph.columns else 0
+                    _border_n  = int((_ph['Zone'] == 'A').sum()) if 'Zone' in _ph.columns else 0
+                    _r_night   = min(20, _night_n * 3)
+                    _r_border  = min(30, _border_n * 5)
+                    _r_shuttle = min(20, _n_cams_s * 3)
+                    _r_regional = min(10, 4)
+                    _score_int = _r_night + _r_border + _r_shuttle + _r_regional
 
-                    # ── Timeline scatter ─────────────────────────────────────
-                    if _cam_col2 in _ph.columns:
-                        import plotly.graph_objects as go
-                        _tl_df = _ph[['Datetime', _cam_col2]].dropna()
-                        _cams_uniq = _tl_df[_cam_col2].unique()
-                        _cam_idx   = {c: i for i, c in enumerate(_cams_uniq)}
-                        _fig_tl = go.Figure()
-                        _fig_tl.add_trace(go.Scatter(
-                            x=_tl_df['Datetime'],
-                            y=[_cam_idx[c] for c in _tl_df[_cam_col2]],
-                            mode='markers+lines',
-                            marker=dict(size=10, color='#f59e0b',
-                                        line=dict(width=1.5, color='#fbbf24')),
-                            line=dict(color='rgba(245,158,11,0.3)', width=1.5, dash='dot'),
-                            hovertemplate='%{text}<br>%{x|%H:%M น.}<extra></extra>',
-                            text=_tl_df[_cam_col2]
-                        ))
-                        _fig_tl.update_layout(
-                            title=dict(text=f"🔍 Timeline: {_plate_val}",
-                                       font=dict(color='#fef3c7', size=14)),
-                            paper_bgcolor='rgba(0,0,0,0)',
-                            plot_bgcolor='rgba(15,23,42,0.6)',
-                            font_color='#e2e8f0',
-                            height=max(220, len(_cams_uniq) * 36 + 100),
-                            margin=dict(t=40, b=30, l=20, r=20),
-                            yaxis=dict(
-                                tickvals=list(_cam_idx.values()),
-                                ticktext=[str(c)[:25] for c in _cams_uniq],
-                                gridcolor='rgba(255,255,255,0.06)'
-                            ),
-                            xaxis=dict(gridcolor='rgba(255,255,255,0.06)')
-                        )
-                        st.plotly_chart(_fig_tl, use_container_width=True)
-
-                    # ── Camera frequency + full table ─────────────────────────
-                    _cols_stat, _cols_table = st.columns([1, 2])
-                    with _cols_stat:
-                        st.markdown("**📊 ความถี่พบต่อกล้อง:**")
-                        if _cam_col2 in _ph.columns:
-                            _cam_freq = (_ph.groupby(_cam_col2)
-                                         .agg(ครั้ง=(f'ทะเบียน_Full', 'count'))
-                                         .rename_axis('กล้อง').reset_index()
-                                         .sort_values('ครั้ง', ascending=False))
-                            st.dataframe(_cam_freq, use_container_width=True,
-                                         hide_index=True)
-                    with _cols_table:
-                        st.markdown("**📋 รายการพบทั้งหมด:**")
-                        _show_cols2 = [c for c in [
-                            'Datetime', _cam_col2, 'Zone', 'ทิศทาง',
-                            'Speed_kmh', 'ประเภทพาหนะ'
-                        ] if c in _ph.columns]
-                        if _show_cols2:
-                            st.dataframe(_ph[_show_cols2].reset_index(drop=True),
-                                         use_container_width=True, hide_index=True)
-
-                    # ── Map (ถ้ามี lat/lon) ────────────────────────────────────
-                    _lat_col = next((c for c in ['lat','latitude','Lat'] if c in _ph.columns), None)
-                    _lon_col = next((c for c in ['lon','longitude','Lon'] if c in _ph.columns), None)
-                    if _lat_col and _lon_col:
-                        _mp = _ph[[_lat_col, _lon_col, _cam_col2]].dropna() if _cam_col2 in _ph.columns else _ph[[_lat_col, _lon_col]].dropna()
-                        if not _mp.empty:
-                            import plotly.express as _pxm
-                            _fig_map = _pxm.scatter_mapbox(
-                                _mp, lat=_lat_col, lon=_lon_col,
-                                hover_name=_cam_col2 if _cam_col2 in _mp.columns else None,
-                                color_discrete_sequence=['#f59e0b'],
-                                zoom=9, mapbox_style='carto-darkmatter',
-                                title=f"📍 แผนที่เส้นทาง: {_plate_val}"
-                            )
-                            _fig_map.update_layout(height=350, margin=dict(t=40,b=10,l=10,r=10),
-                                                   paper_bgcolor='rgba(0,0,0,0)',
-                                                   font_color='#e2e8f0')
-                            st.plotly_chart(_fig_map, use_container_width=True)
+                    # ── Synthetic target row → render_case_dossier ─────────────
+                    _syn_row = pd.Series({
+                        'Target_ID':           _plate_val,
+                        'Cars_List':           [_plate_val],
+                        'ประเภท':              'กลุ่มรถต้องสงสัย',
+                        'พฤติกรรมต้องสงสัย':  _sel.get('_r', '-'),
+                        'Risk Score':          f"{_score_int}%",
+                        'Radar_Data':          {
+                            'Night':    _r_night,
+                            'Border':   _r_border,
+                            'Shuttle':  _r_shuttle,
+                            'Regional': _r_regional,
+                            'Convoy':   0,
+                        },
+                        'เป้าหมาย':           _plate_val,
+                        'คะแนนรวม':           _score_int,
+                        'Total_Dist':          '-',
+                        'ระยะห่างเฉลี่ย':      '-',
+                    })
+                    _syn_df = pd.DataFrame([_syn_row])
+                    render_case_dossier(_plate_val, rt_df, _syn_df)
                 else:
-                    st.info("ℹ️ ไม่พบข้อมูลการเคลื่อนที่เพิ่มเติมสำหรับทะเบียนนี้")
+                    st.info("ℹ️ ไม่พบข้อมูลการเคลื่อนที่สำหรับทะเบียนนี้")
+
 
     # ── 3 sub-tabs: convoy filter Cars_List ≥ 2 ──────────────────────────────
     def _cars_len(cars):
