@@ -2178,7 +2178,11 @@ def render_case_dossier(selected_target, active_db, priority_df):
     if active_db is None or active_db.empty or 'ทะเบียน_Full' not in active_db.columns:
         st.info("⚠️ ไม่พบข้อมูลรายละเอียด — กรุณาโหลดข้อมูลวันที่เลือกใหม่อีกครั้งผ่าน Admin Portal")
         return
-    target_info = priority_df[priority_df['Target_ID'] == selected_target].iloc[0]
+    _target_rows = priority_df[priority_df['Target_ID'] == selected_target]
+    if _target_rows.empty:
+        st.warning(f"⚠️ ไม่พบเป้าหมาย '{selected_target}' ในข้อมูลที่โหลดอยู่ — กรุณาเลือกวันที่ใหม่หรือ Refresh หน้า")
+        return
+    target_info = _target_rows.iloc[0]
     cars = target_info['Cars_List']
     case_data = active_db[active_db['ทะเบียน_Full'].isin(cars)].sort_values('Datetime')
     
