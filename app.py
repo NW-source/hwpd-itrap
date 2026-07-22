@@ -2180,7 +2180,7 @@ def render_case_dossier(selected_target, active_db, priority_df):
         return
     _target_rows = priority_df[priority_df['Target_ID'].astype(str).str.strip() == str(selected_target).strip()]
     if _target_rows.empty:
-        st.warning(f"⚠️ ไม่พบเป้าหมาย 'โปรด Refresh หน้าหรือ Upload ไฟล์ใหม่'")
+        st.warning(f"⚠️ ไม่พบเป้าหมาย '{selected_target}' — กรุณา Refresh หน้า")
         return
     target_info = _target_rows.iloc[0]
     cars = target_info['Cars_List']
@@ -2597,7 +2597,8 @@ def show_clickable_table(df_display, table_key, active_db, priority_df):
         if not target_id:
             st.warning("⚠️ ไม่สามารถระบุเป้าหมายได้ กรุณา Refresh")
         else:
-            render_case_dossier(target_id, active_db, priority_df)
+            # ใช้ df_display เป็น lookup source (สามารถระบุ Target_ID ได้เสมอ เพราะ _id_map มาจาก df_display)
+            render_case_dossier(target_id, active_db, df_display)
 
 # ==========================================
 # 5. สถาปัตยกรรมหน้าจอหลัก (Decoupled UI)
