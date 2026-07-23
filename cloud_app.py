@@ -3236,8 +3236,8 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
         if _CLOUD_ENABLED and is_supabase_configured():
             with st.spinner("☁️ กำลังโหลดข้อมูลจาก Cloud..."):
                 try:
-                    # 1. Pull All Reports for historical reference
-                    all_res = supabase.table('cloud_daily_reports').select('*').order('report_date', desc=True).execute()
+                    # 1. Pull All Reports for historical reference (ดึงเฉพาะ columns ที่จำเป็น เพื่อประหยัด egress)
+                    all_res = supabase.table('cloud_daily_reports').select('report_date, dashboard_metrics, priority_data').order('report_date', desc=True).execute()
                     if all_res.data:
                         reports_full_df = pd.DataFrame(all_res.data)
                         
