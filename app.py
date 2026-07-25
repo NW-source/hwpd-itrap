@@ -104,6 +104,91 @@ def excel_download_button(df: pd.DataFrame, filename: str, label: str = "📥 Ex
     except Exception as e:
         st.caption(f"⚠️ Export ไม่สำเร็จ: {e}")
 
+def build_2col_export_df(df_input: pd.DataFrame, active_db: pd.DataFrame = None) -> pd.DataFrame:
+    """สร้าง DataFrame มี 2 คอลัมน์คือ 'ทะเบียนรถ' และ 'จังหวัด' สำหรับ Export Excel"""
+    if df_input is None or df_input.empty:
+        return pd.DataFrame(columns=['ทะเบียนรถ', 'จังหวัด'])
+
+    import re as _re_exp
+
+    def _parse_target_str(target_str):
+        s = str(target_str).strip()
+        if not s or s in ('-', 'None', 'nan'):
+            return None, None
+        parts = s.split()
+        if len(parts) >= 2:
+            last = parts[-1]
+            if _re_exp.match(r'^[ก-ฮ]+$', last) and len(last) > 1 and not _re_exp.match(r'^[ก-ฮ]{1,3}\d', last):
+                plate_part = " ".join(parts[:-1])
+                prov_part = last
+                return plate_part, prov_part
+        return s, ""
+
+    rows = []
+
+    if 'ทะเบียนรถ' in df_input.columns and 'จังหวัด' in df_input.columns:
+        for _, r in df_input.iterrows():
+            pr = str(r.get('ทะเบียนรถ', '')).strip()
+            pv = str(r.get('จังหวัด', '')).strip()
+            if pr and pr != '-':
+                rows.append({'ทะเบียนรถ': pr, 'จังหวัด': pv})
+    elif 'plate' in df_input.columns:
+        for p in df_input['plate']:
+            plate, prov = _parse_target_str(p)
+            if plate:
+                rows.append({'ทะเบียนรถ': plate, 'จังหวัด': prov})
+    elif 'Cars_List' in df_input.columns:
+        for _, r in df_input.iterrows():
+            cars = r['Cars_List']
+            if isinstance(cars, str):
+                import ast
+                try: cars = ast.literal_eval(cars)
+                except: cars = [cars]
+            if not isinstance(cars, list):
+                cars = [str(cars)]
+            for c in cars:
+                plate, prov = _parse_target_str(c)
+                if plate:
+                    rows.append({'ทะเบียนรถ': plate, 'จังหวัด': prov})
+    elif 'เป้าหมาย' in df_input.columns or 'ทะเบียน' in df_input.columns:
+        col = 'เป้าหมาย' if 'เป้าหมาย' in df_input.columns else 'ทะเบียน'
+        for val in df_input[col]:
+            for part in str(val).split('/'):
+                plate, prov = _parse_target_str(part.strip())
+                if plate:
+                    rows.append({'ทะเบียนรถ': plate, 'จังหวัด': prov})
+
+    if not rows:
+        return pd.DataFrame(columns=['ทะเบียนรถ', 'จังหวัด'])
+
+    res_df = pd.DataFrame(rows)
+
+    if active_db is not None and not active_db.empty:
+        lookup_map = {}
+        if 'ทะเบียน_Full' in active_db.columns:
+            for _, r in active_db.iterrows():
+                tf = str(r.get('ทะเบียน_Full', ''))
+                if tf:
+                    p_plate, p_prov = _parse_target_str(tf)
+                    if p_plate and p_prov:
+                        lookup_map[p_plate] = p_prov
+
+        if 'ทะเบียนรถ' in active_db.columns and 'จังหวัด' in active_db.columns:
+            for _, r in active_db.iterrows():
+                pr = str(r.get('ทะเบียนรถ', '')).strip()
+                pv = str(r.get('จังหวัด', '')).strip()
+                if pr and pv:
+                    lookup_map[pr] = pv
+
+        for idx in range(len(res_df)):
+            if not res_df.at[idx, 'จังหวัด']:
+                pl = res_df.at[idx, 'ทะเบียนรถ']
+                if pl in lookup_map:
+                    res_df.at[idx, 'จังหวัด'] = lookup_map[pl]
+
+    return res_df.drop_duplicates().reset_index(drop=True)
+
+
 # ── Helper: AI Feedback table setup ────────────────────────────────────
 def ensure_feedback_table():
     """สร้าง ai_feedback table ถ้ายังไม่มี"""
@@ -541,8 +626,8 @@ def render_realtime_tab(selected_date: str, rt_active_db: pd.DataFrame, rt_prior
         st.caption("🖱️ คลิกแถวเพื่อดูเหตุผล AI + คำแนะนำ + แผนที่ด้านล่าง")
         _ev = st.dataframe(_disp, use_container_width=True, hide_index=True,
                            on_select="rerun", selection_mode="single-row", key=f"rt_{tab_key}")
-        excel_download_button(_disp, f"realtime_{tab_key}_{selected_date}.xlsx",
-                              "📥 Export ตารางนี้ (Excel)")
+        excel_download_button(build_2col_export_df(_full, rt_df), f"realtime_{tab_key}_{selected_date}.xlsx",
+                              "📥 Export รายชื่อทะเบียน (Excel)")
 
         if _ev.selection.rows:
             _sel    = _full.iloc[_ev.selection.rows[0]]
@@ -2594,7 +2679,7 @@ def show_clickable_table(df_display, table_key, active_db, priority_df):
             ),
         }
     )
-    excel_download_button(df_clean, f"priority_{table_key}.xlsx", "📥 Export ตารางนี้ (Excel)")
+    excel_download_button(build_2col_export_df(df_display, active_db), f"priority_{table_key}.xlsx", "📥 Export รายชื่อทะเบียน (Excel)")
     
     if len(event.selection.rows) > 0:
         selected_idx = event.selection.rows[0]
@@ -3242,7 +3327,7 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
                                 'คะแนนสูงสุด': 'Score สูงสุด'
                             })
                             st.dataframe(disp_df, use_container_width=True, hide_index=True)
-                            excel_download_button(disp_df, f"repeat_{cat_name}.xlsx",
+                            excel_download_button(build_2col_export_df(df_cat), f"repeat_{cat_name}.xlsx",
                                                   f"📥 Export {cat_name} (Excel)")
                             st.markdown("---")
 
