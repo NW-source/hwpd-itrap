@@ -135,7 +135,8 @@ def build_2col_export_df(df_input: pd.DataFrame, active_db: pd.DataFrame = None)
         parts = s.split()
         if len(parts) >= 2:
             last = parts[-1]
-            if _re_exp.match(r'^[ก-ฮ]+$', last) and len(last) > 1 and not _re_exp.match(r'^[ก-ฮ]{1,3}\d', last):
+            # ชื่อจังหวัดต้องไม่มีตัวเลข และความยาว >= 2
+            if not _re_exp.search(r'\d', last) and len(last) >= 2:
                 plate_part = " ".join(parts[:-1])
                 prov_part = last
                 return plate_part, prov_part
@@ -143,12 +144,20 @@ def build_2col_export_df(df_input: pd.DataFrame, active_db: pd.DataFrame = None)
 
     rows = []
 
-    if 'ทะเบียนรถ' in df_input.columns and 'จังหวัด' in df_input.columns:
+    if 'ทะเบียนรถ' in df_input.columns or 'ทะเบียน_Full' in df_input.columns:
+        col = 'ทะเบียนรถ' if 'ทะเบียนรถ' in df_input.columns else 'ทะเบียน_Full'
         for _, r in df_input.iterrows():
-            pr = str(r.get('ทะเบียนรถ', '')).strip()
+            pr = str(r.get(col, '')).strip()
             pv = str(r.get('จังหวัด', '')).strip()
-            if pr and pr != '-':
-                rows.append({'ทะเบียนรถ': pr, 'จังหวัด': pv})
+            plate, prov = _parse_target_str(pr)
+            if plate:
+                final_plate = plate
+                final_prov = prov if prov else pv
+            else:
+                final_plate = pr
+                final_prov = pv
+            if final_plate and final_plate != '-':
+                rows.append({'ทะเบียนรถ': final_plate, 'จังหวัด': final_prov})
     elif 'plate' in df_input.columns:
         for p in df_input['plate']:
             plate, prov = _parse_target_str(p)
@@ -195,7 +204,8 @@ def build_2col_export_df(df_input: pd.DataFrame, active_db: pd.DataFrame = None)
                 pr = str(r.get('ทะเบียนรถ', '')).strip()
                 pv = str(r.get('จังหวัด', '')).strip()
                 if pr and pv:
-                    lookup_map[pr] = pv
+                    p_plate, _ = _parse_target_str(pr)
+                    lookup_map[p_plate if p_plate else pr] = pv
 
         for idx in range(len(res_df)):
             if not res_df.at[idx, 'จังหวัด']:
@@ -204,6 +214,7 @@ def build_2col_export_df(df_input: pd.DataFrame, active_db: pd.DataFrame = None)
                     res_df.at[idx, 'จังหวัด'] = lookup_map[pl]
 
     return res_df.drop_duplicates().reset_index(drop=True)
+
 
 
 # ── Helper: AI Feedback table setup ────────────────────────────────────
