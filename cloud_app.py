@@ -1146,6 +1146,37 @@ def _load_available_dates_cloud():
     except Exception:
         return []
 
+@st.cache_data(ttl=300, show_spinner=False)
+def _load_cloud_report(selected_date: str):
+    """ดึง priority_data + dashboard_metrics สำหรับวันที่เลือก — cached 5 นาที"""
+    if not is_supabase_configured():
+        return None, None
+    try:
+        import json as _json
+        from supabase_sync import get_supabase_client as _gsc
+        _res = _gsc().table('cloud_daily_reports').select(
+            'priority_data, dashboard_metrics'
+        ).eq('report_date', selected_date).execute()
+        if _res.data and len(_res.data) > 0:
+            return _res.data[0]['priority_data'], _res.data[0]['dashboard_metrics']
+        return None, None
+    except Exception:
+        return None, None
+
+@st.cache_data(ttl=300, show_spinner=False)
+def _load_all_reports_cloud():
+    """ดึง all reports (report_date + priority_data + metrics) — cached 5 นาที"""
+    if not is_supabase_configured():
+        return pd.DataFrame()
+    try:
+        from supabase_sync import get_supabase_client as _gsc
+        _res = _gsc().table('cloud_daily_reports').select(
+            'report_date, dashboard_metrics, priority_data'
+        ).order('report_date', desc=True).execute()
+        return pd.DataFrame(_res.data) if _res.data else pd.DataFrame()
+    except Exception:
+        return pd.DataFrame()
+
 def _valid_priority_plate_fn(target_str):
     """Validate plate — defined once at module level."""
     import re as _re
@@ -2537,20 +2568,27 @@ def render_case_dossier(selected_target, active_db, priority_df):
             </button>
         """)
 
-    conn = sqlite3.connect(DB_PATH)
-    status_row = conn.execute("SELECT status FROM target_status WHERE Target_ID=?", (selected_target,)).fetchone()
-    current_status = status_row[0] if status_row else "🔴 เฝ้าระวังใหม่"
+    # ★ PERF: ใช้ cached _load_target_status — ไม่ query SQLite ทุกครั้งที่คลิก detail (cloud)
+    _ts_df = _load_target_status()
+    if not _ts_df.empty:
+        _ts_row = _ts_df[_ts_df['Target_ID'] == selected_target]
+        current_status = _ts_row['status'].iloc[0] if not _ts_row.empty else "🔴 เฝ้าระวังใหม่"
+    else:
+        current_status = "🔴 เฝ้าระวังใหม่"
     
     st.markdown("#### 🎯 ระบุสถานะเป้าหมาย (Action Status)")
     status_options = ["🔴 เฝ้าระวังใหม่", "🟡 สั่งการตรวจสอบแล้ว", "🟢 เคลียร์เป้าหมาย/จับกุมแล้ว"]
     new_status = st.selectbox("ปรับปรุงสถานะ:", status_options, index=status_options.index(current_status), key=f"status_{selected_target}", label_visibility="collapsed")
     
     if new_status != current_status:
-        conn.execute("INSERT OR REPLACE INTO target_status (Target_ID, status, last_update) VALUES (?, ?, ?)", (selected_target, new_status, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
-        conn.commit()
+        _cw = sqlite3.connect(DB_PATH)
+        _cw.execute("INSERT OR REPLACE INTO target_status (Target_ID, status, last_update) VALUES (?, ?, ?)",
+                    (selected_target, new_status, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+        _cw.commit()
+        _cw.close()
+        _load_target_status.clear()  # ล้าง cache หลังอัปเดท
         st.success(f"✅ อัปเดตสถานะเป็น: {new_status} เรียบร้อยแล้ว! (มีผลทันทีในตารางเป้าหมาย)")
-        st.session_state['force_refresh'] = True 
-    conn.close()
+        st.session_state['force_refresh'] = True
     
     # === Layout แยกตาม Engine ===
     if is_clone:
@@ -3375,55 +3413,36 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
         
         historical_db_pl = pl.DataFrame()
         
-        # Pull data from Supabase
-        if _CLOUD_ENABLED and is_supabase_configured():
-            with st.spinner("☁️ กำลังโหลดข้อมูลจาก Cloud..."):
-                try:
-                    # 1. Pull All Reports for historical reference (ดึงเฉพาะ columns ที่จำเป็น เพื่อประหยัด egress)
-                    all_res = supabase.table('cloud_daily_reports').select('report_date, dashboard_metrics, priority_data').order('report_date', desc=True).execute()
-                    if all_res.data:
-                        reports_full_df = pd.DataFrame(all_res.data)
-                        
-                    # 2. Pull target date priority
-                    res = supabase.table('cloud_daily_reports').select('priority_data, dashboard_metrics').eq('report_date', selected_date).execute()
-                    if res.data and len(res.data) > 0:
-                        import json
-                        
-                        p_data = res.data[0]['priority_data']
-                        # if it's already a list (from supabase jsonb), use it directly
-                        if isinstance(p_data, str):
-                            p_data = json.loads(p_data)
-                        priority_df = pd.DataFrame(p_data)
-                        
-                        if not priority_df.empty and 'เป้าหมาย' in priority_df.columns:
-                            # ★ PERF: ใช้ module-level functions — ไม่ re-define ทุก rerun
-                            priority_df = priority_df[priority_df['เป้าหมาย'].apply(_valid_priority_plate_fn)].reset_index(drop=True)
-                            if not priority_df.empty:
-                                priority_df['เป้าหมาย'] = priority_df['เป้าหมาย'].apply(_fmt_priority_plate_fn)
+        # ★ PERF: ใช้ cached functions — ไม่ดึง Supabase 2 ครั้งทุก rerun
+        _p_raw, _m_raw = _load_cloud_report(selected_date)
+        if _p_raw is not None:
+            import json as _json
+            _p_data = _p_raw if isinstance(_p_raw, list) else _json.loads(_p_raw)
+            priority_df = pd.DataFrame(_p_data)
+            if not priority_df.empty and 'เป้าหมาย' in priority_df.columns:
+                priority_df = priority_df[priority_df['เป้าหมาย'].apply(_valid_priority_plate_fn)].reset_index(drop=True)
+                if not priority_df.empty:
+                    priority_df['เป้าหมาย'] = priority_df['เป้าหมาย'].apply(_fmt_priority_plate_fn)
+            if 'Cars_List' in priority_df.columns:
+                priority_df['Cars_List'] = priority_df['Cars_List'].apply(lambda x: ast.literal_eval(x) if isinstance(x, str) else x)
+            if 'Radar_Data' in priority_df.columns:
+                priority_df['Radar_Data'] = priority_df['Radar_Data'].apply(lambda x: ast.literal_eval(x) if isinstance(x, str) else x)
+            if 'dates_list' in priority_df.columns:
+                priority_df['dates_list'] = priority_df['dates_list'].apply(lambda x: ast.literal_eval(x) if isinstance(x, str) else x)
+            _m_data = _m_raw if isinstance(_m_raw, dict) else (_json.loads(_m_raw) if isinstance(_m_raw, str) and _m_raw else {})
+            metrics = _m_data or {}
 
-                        # convert strings back to list/dict for UI render
-                        if 'Cars_List' in priority_df.columns:
-                            priority_df['Cars_List'] = priority_df['Cars_List'].apply(lambda x: ast.literal_eval(x) if isinstance(x, str) else x)
-                        if 'Radar_Data' in priority_df.columns:
-                            priority_df['Radar_Data'] = priority_df['Radar_Data'].apply(lambda x: ast.literal_eval(x) if isinstance(x, str) else x)
-                        if 'dates_list' in priority_df.columns:
-                            priority_df['dates_list'] = priority_df['dates_list'].apply(lambda x: ast.literal_eval(x) if isinstance(x, str) else x)
-                            
-                        m_data = res.data[0]['dashboard_metrics']
-                        if isinstance(m_data, str):
-                            m_data = json.loads(m_data) if m_data else {}
-                        metrics = m_data if m_data else {}
-                except Exception as e:
-                    st.error(f"⚠️ Error loading report: {e}")
-                
-                # 3. Pull Parquet Data for maps & dossier (cached 30 min ลด egress)
-                @st.cache_data(ttl=1800, show_spinner=False)
-                def _cached_parquet(date: str):
-                    from supabase_sync import pull_parquet_from_cloud as _ppc
-                    result = _ppc(date)
-                    return result if result is not None else pl.DataFrame()
-                historical_db_pl = _cached_parquet(selected_date)
-                
+        reports_full_df = _load_all_reports_cloud()
+
+        # 3. Pull Parquet Data for maps & dossier (cached 30 min ลด egress)
+        if _CLOUD_ENABLED and is_supabase_configured():
+            @st.cache_data(ttl=1800, show_spinner=False)
+            def _cached_parquet(date: str):
+                from supabase_sync import pull_parquet_from_cloud as _ppc
+                result = _ppc(date)
+                return result if result is not None else pl.DataFrame()
+            historical_db_pl = _cached_parquet(selected_date)
+
         if not historical_db_pl.is_empty():
             # ★ PERF: filter ใน Polars ก่อน → แปลงเฉพาะ slice (ประหยัด RAM + เวลา ~5-10x)
             try:
