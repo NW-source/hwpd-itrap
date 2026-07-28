@@ -3207,14 +3207,9 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
     if st.sidebar.button("🔍 รถพฤติกรรมต้องสงสัย", width='stretch'): change_tab("🔄 พฤติกรรมมุดชายแดน")
     if st.sidebar.button("⭐ รถที่น่าสนใจ (Watch List)", width='stretch'): change_tab("⭐ รถที่น่าสนใจ")
     
-    conn = sqlite3.connect(DB_PATH)
-    try:
-        reports_df = pd.read_sql("SELECT report_date FROM daily_reports ORDER BY report_date DESC", conn)
-        available_dates = reports_df['report_date'].tolist()
-    except:
-        available_dates = []
-    finally:
-        conn.close()  # ปิดทันที ไม่รอ 'else'
+    # ★ PERF: ใช้ _load_reports_for_trend (cached 5 min) แทน query ใหม่ทุก rerun
+    _rpt_df = _load_reports_for_trend()
+    available_dates = _rpt_df['report_date'].tolist() if not _rpt_df.empty else []
     if not available_dates:
         st.info("📭 ยังไม่มีรายงานในระบบ กรุณาให้ Admin ทำการอัปโหลดและประมวลผลข้อมูลก่อนครับ")
     else:
@@ -3232,13 +3227,6 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
         with col_t1:
             st.markdown(f"<div style='padding: 10px; background-color: #f8fafc; border-left: 5px solid #10b981; border-radius: 5px; color: #0f172a;'><span class='live-dot'></span><b>Live Sync: Standby</b> | กำลังแสดงผลรายงานข่าวกรองประจำวันที่: <b>{selected_date}</b></div>", unsafe_allow_html=True)
             
-        try:
-            _conn2 = sqlite3.connect(DB_PATH)
-            _cur2  = _conn2.cursor()
-            _cur2.execute("SELECT priority_data, dashboard_metrics FROM daily_reports WHERE report_date = ?", (selected_date,))
-            row    = _cur2.fetchone()
-        finally:
-            _conn2.close()
         # ★ PERF: ใช้ cached functions — ไม่ re-parse JSON + re-validate ทุก rerun
         priority_df, metrics = _load_and_filter_priority(DB_PATH, selected_date)
         reports_full_df = _load_reports_for_trend()

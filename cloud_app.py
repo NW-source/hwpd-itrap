@@ -1134,6 +1134,18 @@ def _load_target_status():
     except Exception:
         return pd.DataFrame()
 
+@st.cache_data(ttl=300, show_spinner=False)
+def _load_available_dates_cloud():
+    """ดึง report_date list จาก Supabase — cached 5 นาที พี tab switch นับพันครั้ง"""
+    if not is_supabase_configured():
+        return []
+    try:
+        from supabase_sync import get_supabase_client as _gsc
+        _res = _gsc().table('cloud_daily_reports').select('report_date').order('report_date', desc=True).execute()
+        return [r['report_date'] for r in (_res.data or [])]
+    except Exception:
+        return []
+
 def _valid_priority_plate_fn(target_str):
     """Validate plate — defined once at module level."""
     import re as _re
@@ -3288,17 +3300,8 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
     
     st.sidebar.markdown("---")
     
-    # Load dates from Supabase FIRST
-    available_dates = []
-    if _CLOUD_ENABLED and is_supabase_configured():
-        from supabase_sync import get_supabase_client
-        supabase = get_supabase_client()
-        try:
-            res = supabase.table('cloud_daily_reports').select('report_date').order('report_date', desc=True).execute()
-            if res.data:
-                available_dates = [r['report_date'] for r in res.data]
-        except: pass
-        
+    # ★ PERF: ใช้ cached function — ไม่ดึง Supabase ทุกครั้งที่กด Tab (สาเหตุหลักที่ช้า)
+    available_dates = _load_available_dates_cloud()
     _tz_th = timezone(timedelta(hours=7))  # Bangkok UTC+7
     _cloud_today = datetime.now(_tz_th).strftime('%Y-%m-%d')
 
