@@ -3609,13 +3609,18 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
 
                 # ★ PERF: คำนวณ cum7 และ cum30 โดยใช้ to_numeric แบบรวดเร็ว
                 _today_d = pd.to_datetime(datetime.now().strftime('%Y-%m-%d'))
-                reports_full_df['date'] = pd.to_datetime(reports_full_df['report_date'])
-                mask_7 = (reports_full_df['date'] <= _today_d) & (reports_full_df['date'] > _today_d - timedelta(days=7))
-                mask_30 = (reports_full_df['date'] <= _today_d) & (reports_full_df['date'] > _today_d - timedelta(days=30))
-                
+                _rpt_df = _load_reports_for_repeat()  # has priority_data — cached 30 min
+                if not _rpt_df.empty:
+                    _rpt_df['date'] = pd.to_datetime(_rpt_df['report_date'])
+                    mask_7  = (_rpt_df['date'] <= _today_d) & (_rpt_df['date'] > _today_d - timedelta(days=7))
+                    mask_30 = (_rpt_df['date'] <= _today_d) & (_rpt_df['date'] > _today_d - timedelta(days=30))
+                else:
+                    mask_7 = mask_30 = pd.Series([], dtype=bool)
+
                 def calc_cum(mask):
                     c_apex, c_clone, c_car, c_other = 0, 0, 0, 0
-                    for p_data in reports_full_df[mask]['priority_data']:
+                    if _rpt_df.empty or not mask.any(): return c_apex, c_clone, c_car, c_other
+                    for p_data in _rpt_df[mask]['priority_data']:
                         try:
                             if isinstance(p_data, str):
                                 import json
@@ -3624,14 +3629,14 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
                             if not pdf.empty:
                                 _rn = pd.to_numeric(pdf['Risk Score'].astype(str).str.replace('%', '', regex=False), errors='coerce').fillna(0)
                                 fdf = pdf[_rn >= 80]
-                                c_apex += len(fdf[fdf['ประเภท'] == "กลุ่มเป้าหมายความมั่นคงระดับสูงสุด"])
+                                c_apex  += len(fdf[fdf['ประเภท'] == "กลุ่มเป้าหมายความมั่นคงระดับสูงสุด"])
                                 c_clone += len(fdf[fdf['ประเภท'] == "กลุ่มเป้าหมายสวมทะเบียน"])
-                                c_car += len(fdf[fdf['ประเภท'] == "กลุ่มรถยนต์เคลื่อนที่แบบขบวน"])
+                                c_car   += len(fdf[fdf['ประเภท'] == "กลุ่มรถยนต์เคลื่อนที่แบบขบวน"])
                                 c_other += len(fdf[fdf['ประเภท'] == "กลุ่มรถต้องสงสัย"])
                         except: pass
                     return c_apex, c_clone, c_car, c_other
 
-                cum7_apex, cum7_clone, cum7_car, cum7_other = calc_cum(mask_7)
+                cum7_apex,  cum7_clone,  cum7_car,  cum7_other  = calc_cum(mask_7)
                 cum30_apex, cum30_clone, cum30_car, cum30_other = calc_cum(mask_30)
 
                 st.markdown("### 📊 ข้อมูลสรุปเป้าหมายสำคัญ (Intelligence Brief)")
