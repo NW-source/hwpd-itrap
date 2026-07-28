@@ -1165,13 +1165,39 @@ def _load_cloud_report(selected_date: str):
 
 @st.cache_data(ttl=300, show_spinner=False)
 def _load_all_reports_cloud():
-    """ดึง all reports (report_date + priority_data + metrics) — cached 5 นาที"""
+    """ดึง report_date + dashboard_metrics เท่านั้น (ไม่ดึง priority_data ที่หนัก) — cached 5 นาที"""
     if not is_supabase_configured():
         return pd.DataFrame()
     try:
         from supabase_sync import get_supabase_client as _gsc
         _res = _gsc().table('cloud_daily_reports').select(
-            'report_date, dashboard_metrics, priority_data'
+            'report_date, dashboard_metrics'
+        ).order('report_date', desc=True).execute()
+        return pd.DataFrame(_res.data) if _res.data else pd.DataFrame()
+    except Exception:
+        return pd.DataFrame()
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def _cached_parquet_cloud(date: str):
+    """ดึง Parquet จาก Cloud Storage — cached 30 นาที (ลด Supabase Egress)"""
+    if not is_supabase_configured():
+        return pl.DataFrame()
+    try:
+        from supabase_sync import pull_parquet_from_cloud as _ppc
+        result = _ppc(date)
+        return result if result is not None else pl.DataFrame()
+    except Exception:
+        return pl.DataFrame()
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def _load_reports_for_repeat():
+    """ดึง report_date + priority_data สำหรับ Repeat Offender เท่านั้น — cached 30 นาที"""
+    if not is_supabase_configured():
+        return pd.DataFrame()
+    try:
+        from supabase_sync import get_supabase_client as _gsc
+        _res = _gsc().table('cloud_daily_reports').select(
+            'report_date, priority_data'
         ).order('report_date', desc=True).execute()
         return pd.DataFrame(_res.data) if _res.data else pd.DataFrame()
     except Exception:
@@ -3436,12 +3462,7 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
 
         # 3. Pull Parquet Data for maps & dossier (cached 30 min ลด egress)
         if _CLOUD_ENABLED and is_supabase_configured():
-            @st.cache_data(ttl=1800, show_spinner=False)
-            def _cached_parquet(date: str):
-                from supabase_sync import pull_parquet_from_cloud as _ppc
-                result = _ppc(date)
-                return result if result is not None else pl.DataFrame()
-            historical_db_pl = _cached_parquet(selected_date)
+            historical_db_pl = _cached_parquet_cloud(selected_date)
 
         if not historical_db_pl.is_empty():
             # ★ PERF: filter ใน Polars ก่อน → แปลงเฉพาะ slice (ประหยัด RAM + เวลา ~5-10x)
@@ -3700,7 +3721,7 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
                     if _sel_str != _today_str:
                         st.empty()
                     else:
-                        _rep = repeat_offender_analysis(reports_full_df, selected_date, window_days=30, min_days=2)
+                        _rep = repeat_offender_analysis(_load_reports_for_repeat(), selected_date, window_days=30, min_days=2)
 
                         if _rep.empty:
                             st.info("⚠️ ยังไม่พบทะเบียนที่ปรากฏซ้ำ ≥ 2 วัน ในช่วง 30 วันที่ผ่านมา — ต้องมีข้อมูลอย่างน้อย 2 วันในระบบ")
