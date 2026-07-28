@@ -2449,20 +2449,26 @@ def render_case_dossier(selected_target, active_db, priority_df):
             </button>
         """)
 
-    conn = sqlite3.connect(DB_PATH)
-    status_row = conn.execute("SELECT status FROM target_status WHERE Target_ID=?", (selected_target,)).fetchone()
-    current_status = status_row[0] if status_row else "🔴 เฝ้าระวังใหม่"
+    # ★ PERF: ใช้ cached _load_target_status — ไม่ query SQLite ทุกครั้งที่คลิก detail
+    _ts_df = _load_target_status()
+    if not _ts_df.empty:
+        _ts_row = _ts_df[_ts_df['Target_ID'] == selected_target]
+        current_status = _ts_row['status'].iloc[0] if not _ts_row.empty else "🔴 เฝ้าระวังใหม่"
+    else:
+        current_status = "🔴 เฝ้าระวังใหม่"
     
     st.markdown("#### 🎯 ระบุสถานะเป้าหมาย (Action Status)")
     status_options = ["🔴 เฝ้าระวังใหม่", "🟡 สั่งการตรวจสอบแล้ว", "🟢 เคลียร์เป้าหมาย/จับกุมแล้ว"]
     new_status = st.selectbox("ปรับปรุงสถานะ:", status_options, index=status_options.index(current_status), key=f"status_{selected_target}", label_visibility="collapsed")
     
     if new_status != current_status:
-        conn.execute("INSERT OR REPLACE INTO target_status (Target_ID, status, last_update) VALUES (?, ?, ?)", (selected_target, new_status, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
-        conn.commit()
+        _conn_w = sqlite3.connect(DB_PATH)
+        _conn_w.execute("INSERT OR REPLACE INTO target_status (Target_ID, status, last_update) VALUES (?, ?, ?)", (selected_target, new_status, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+        _conn_w.commit()
+        _conn_w.close()
+        _load_target_status.clear()  # ล้าง cache หลังอัปเดท
         st.success(f"✅ อัปเดตสถานะเป็น: {new_status} เรียบร้อยแล้ว! (มีผลทันทีในตารางเป้าหมาย)")
-        st.session_state['force_refresh'] = True 
-    conn.close()
+        st.session_state['force_refresh'] = True
     
     # === Layout แยกตาม Engine ===
     if is_clone:
