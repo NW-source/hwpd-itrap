@@ -99,7 +99,7 @@ def excel_download_button(df: pd.DataFrame, filename: str, label: str = "📥 Ex
             data=buf.getvalue(),
             file_name=filename,
             mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            use_container_width=False,
+            width='content',
         )
     except Exception as e:
         st.caption(f"⚠️ Export ไม่สำเร็จ: {e}")
@@ -636,7 +636,7 @@ def render_realtime_tab(selected_date: str, rt_active_db: pd.DataFrame, rt_prior
         _disp['Score'] = _disp['Score'].astype(str)  # ป้องกัน ArrowInvalid mixed-type
 
         st.caption("🖱️ คลิกแถวเพื่อดูเหตุผล AI + คำแนะนำ + แผนที่ด้านล่าง")
-        _ev = st.dataframe(_disp, use_container_width=True, hide_index=True,
+        _ev = st.dataframe(_disp, width='stretch', hide_index=True,
                            on_select="rerun", selection_mode="single-row", key=f"rt_{tab_key}")
         excel_download_button(build_2col_export_df(_full, rt_df), f"realtime_{tab_key}_{selected_date}.xlsx",
                               "📥 Export รายชื่อทะเบียน (Excel)")
@@ -2063,7 +2063,7 @@ def show_watch_list(active_db, selected_date):
         }
         tbl = hs_df[col_order].rename(columns=rename_map)
         event = st.dataframe(
-            tbl, use_container_width=True, hide_index=True,
+            tbl, width='stretch', hide_index=True,
             on_select="rerun", selection_mode="multi-row", key="wl_table"
         )
         excel_download_button(tbl, f"watchlist_{selected_date}.xlsx",
@@ -2254,7 +2254,7 @@ def render_repeat_offender_dossier(plate, historical_db, dates_list):
         'Datetime': 'เวลา', 'Speed_kmh': 'ความเร็ว(กม./ชม.)',
         'Direction': 'ทิศทาง', 'ละติจูด': 'Lat', 'ลองจิจูด': 'Lon'
     })
-    st.dataframe(detail_df, use_container_width=True, height=220)
+    st.dataframe(detail_df, width='stretch', height=220)
     excel_download_button(detail_df, f"route_{plate}.xlsx", "📥 Export เส้นทาง (Excel)")
 
     st.markdown("---")
@@ -2341,7 +2341,7 @@ def render_repeat_offender_dossier(plate, historical_db, dates_list):
                         tooltip=f"สิ้นสุด {d}: {dd['จุดติดตั้งกล้อง'].iloc[-1]}"
                     ).add_to(m)
 
-            components.html(m.get_root().render(), height=460)
+            st.html(m.get_root().render())
 
 
 def run_realtime_intelligence(active_db_pl):
@@ -2443,11 +2443,11 @@ def render_case_dossier(selected_target, active_db, priority_df):
     with col_header:
         st.markdown(f"## 📂 ข้อมูลเป้าหมายเฝ้าระวัง: {selected_target}")
     with col_btn:
-        components.html("""
+        st.html("""
             <button onclick="window.parent.print()" style="width: 100%; padding: 10px; background-color: #0f172a; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; font-family: sans-serif; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">
                 🖨️ พิมพ์ข้อมูลแฟ้มคดี
             </button>
-        """, height=50)
+        """)
 
     conn = sqlite3.connect(DB_PATH)
     status_row = conn.execute("SELECT status FROM target_status WHERE Target_ID=?", (selected_target,)).fetchone()
@@ -2509,7 +2509,7 @@ def render_case_dossier(selected_target, active_db, priority_df):
                     tuple(_normal_coords), tuple(_ghost_coords),
                     show_real, show_fake
                 )
-            components.html(_map_html, height=400)
+            st.html(_map_html)
 
     else:
         if target_info['ประเภท'] == "กลุ่มเป้าหมายความมั่นคงระดับสูงสุด":
@@ -2527,7 +2527,7 @@ def render_case_dossier(selected_target, active_db, priority_df):
             fig_radar = go.Figure()
             fig_radar.add_trace(go.Scatterpolar(r=r_vals, theta=theta_vals, fill='toself', name='พฤติกรรมเป้าหมาย', line_color='#9f1239', fillcolor='rgba(159, 18, 57, 0.4)'))
             fig_radar.update_layout(polar=dict(radialaxis=dict(visible=True, range=[0, 30], showticklabels=False), gridshape='linear'), showlegend=False, height=300, margin=dict(t=20, b=20, l=40, r=40), title=dict(text="📊 แผนภูมิวิเคราะห์รูปแบบพฤติกรรม (Risk Radar)", font=dict(size=14)), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
-            st.plotly_chart(fig_radar, use_container_width=True, key=f"radar_chart_{selected_target}")
+            st.plotly_chart(fig_radar, width='stretch', key=f"radar_chart_{selected_target}")
             
         with col_summary:
             total_reads = len(case_data)
@@ -2597,7 +2597,7 @@ def render_case_dossier(selected_target, active_db, priority_df):
             _map_html = _build_tactical_map_html(
                 _lat_m, _lon_m, tuple(_car_tracks), is_convoy
             )
-        components.html(_map_html, height=400)
+        st.html(_map_html)
 
     if is_convoy:
         st.markdown("### 🔗 ตารางวิเคราะห์โครงข่ายขบวนรถ (Convoy Formation Analysis)")
@@ -2631,7 +2631,7 @@ def render_case_dossier(selected_target, active_db, priority_df):
         if convoy_details:
             df_convoy = pd.DataFrame(convoy_details)
             df_convoy = df_convoy.sort_values(by=['จำนวนยานพาหนะในกลุ่มขบวน', 'วันที่'], ascending=[False, True])
-            st.dataframe(df_convoy, use_container_width=True, hide_index=True)
+            st.dataframe(df_convoy, width='stretch', hide_index=True)
             
     st.markdown("---")
     st.markdown("### ⏱️ โครงข่ายเวลา-สถานที่ (Staggered Grid Time-Space Diagram)")
@@ -2716,7 +2716,7 @@ def render_case_dossier(selected_target, active_db, priority_df):
         yaxis=dict(type='category', showgrid=True, gridcolor='#f1f5f9', autorange='reversed')
     )
     
-    st.plotly_chart(fig_ts, use_container_width=True, key=f"ts_horizontal_{selected_target}")
+    st.plotly_chart(fig_ts, width='stretch', key=f"ts_horizontal_{selected_target}")
 
     st.markdown("---")
     st.markdown("### 📋 ตารางพยานหลักฐาน (Raw Evidence Data)")
@@ -2724,7 +2724,7 @@ def render_case_dossier(selected_target, active_db, priority_df):
     raw_evidence = case_data[['วันที่', 'เวลา', 'ทะเบียน_Full', 'จุดติดตั้งกล้อง', 'ประเภทรถ', 'Speed_kmh']].copy()
     raw_evidence['Speed_kmh'] = raw_evidence['Speed_kmh'].round(1)
     raw_evidence = raw_evidence.rename(columns={'วันที่': 'วันที่เกิดเหตุ', 'เวลา': 'เวลาโผล่', 'ทะเบียน_Full': 'หมายเลขทะเบียน', 'จุดติดตั้งกล้อง': 'พิกัดจุดตรวจ', 'ประเภทรถ': 'ประเภท', 'Speed_kmh': 'อัตราเร็ว (กม./ชม.)'})
-    st.dataframe(raw_evidence.reset_index(drop=True), use_container_width=True)
+    st.dataframe(raw_evidence.reset_index(drop=True), width='stretch')
     excel_download_button(raw_evidence.reset_index(drop=True),
                           f"evidence_{selected_target}.xlsx", "📥 Export พยานหลักฐาน (Excel)")
 
@@ -2784,7 +2784,7 @@ def show_clickable_table(df_display, table_key, active_db, priority_df):
 
     event = st.dataframe(
         df_clean,  # ไม่ใช้ style.map — ลด memory overhead
-        use_container_width=True, on_select="rerun", selection_mode="single-row", hide_index=True,
+        width='stretch', on_select="rerun", selection_mode="single-row", hide_index=True,
         key=f"tbl_{table_key}",
         column_config={
             'เป้าหมาย': st.column_config.TextColumn(
@@ -2807,7 +2807,7 @@ def show_clickable_table(df_display, table_key, active_db, priority_df):
             st.markdown("---")
             _bcol, _ = st.columns([1, 5])
             with _bcol:
-                if st.button("🔙 ปิดรายละเอียด", key=f"back_{table_key}", use_container_width=True):
+                if st.button("🔙 ปิดรายละเอียด", key=f"back_{table_key}", width='stretch'):
                     st.session_state[_back_req_key] = True  # ตั้ง key แยก (ไม่ใช่ widget key)
                     st.rerun()
             render_case_dossier(target_id, active_db, df_display)
@@ -2821,7 +2821,7 @@ require_login()
 import os as _os
 _logo_path = _os.path.join(_os.path.dirname(__file__), 'logo.jpeg')
 if _os.path.exists(_logo_path):
-    st.image(_logo_path, use_container_width=True)
+    st.image(_logo_path, width='stretch')
 
 st.markdown("""
     <div class='main-title'>🛡️ HWPD 60 Intelligence Target &amp; Trap</div>
@@ -2855,11 +2855,11 @@ if _cur_user:
         f"</div>",
         unsafe_allow_html=True
     )
-    if st.sidebar.button("🔓 ออกจากระบบ", key="logout_btn", use_container_width=True):
+    if st.sidebar.button("🔓 ออกจากระบบ", key="logout_btn", width='stretch'):
         logout()
         st.rerun()
 
-if st.sidebar.button(f"{_th_icon} {_th_label}", key="theme_toggle_btn", use_container_width=True):
+if st.sidebar.button(f"{_th_icon} {_th_label}", key="theme_toggle_btn", width='stretch'):
     st.session_state['theme'] = 'light' if _th == 'dark' else 'dark'
     st.rerun()
 
@@ -3033,7 +3033,7 @@ if mode == "⚙️ แอดมิน (Admin Portal)":
         wl_df = pd.read_sql("SELECT ทะเบียนรถ, หมายเหตุ FROM whitelist_master", conn)
         conn.close()
         st.write("📋 **รายชื่อรถในบัญชีขาวปัจจุบัน:**")
-        st.dataframe(wl_df, use_container_width=True, hide_index=True)
+        st.dataframe(wl_df, width='stretch', hide_index=True)
         if not wl_df.empty:
             del_plate = st.selectbox("เลือกทะเบียนที่ต้องการลบออกจากบัญชีขาว:", wl_df['ทะเบียนรถ'])
             if st.button("🗑️ ลบรายการ"):
@@ -3086,7 +3086,7 @@ if mode == "⚙️ แอดมิน (Admin Portal)":
                         'Accuracy': f'{_ac:.0f}%',
                     })
                 _acc_df = pd.DataFrame(_acc_rows)
-                st.dataframe(_acc_df, use_container_width=True, hide_index=True)
+                st.dataframe(_acc_df, width='stretch', hide_index=True)
                 excel_download_button(_acc_df, "ai_accuracy.xlsx", "📥 Export Accuracy Report (Excel)")
 
             # ── Full feedback log ──────────────────────────────────────────
@@ -3101,7 +3101,7 @@ if mode == "⚙️ แอดมิน (Admin Portal)":
                 'report_date': 'วันที่รายงาน', 'notes': 'หมายเหตุ',
                 'feedback_date': 'วันที่ให้ Feedback'
             })
-            st.dataframe(_log_disp, use_container_width=True, hide_index=True)
+            st.dataframe(_log_disp, width='stretch', hide_index=True)
             excel_download_button(_log_disp, "ai_feedback_log.xlsx", "📥 Export Feedback Log (Excel)")
 
     # ── TAB: จัดการผู้ใช้ (Super Admin only) ──────────────────────────────────
@@ -3126,7 +3126,7 @@ if mode == "⚙️ แอดมิน (Admin Portal)":
                         "เข้าใช้ล่าสุด": str(u.get('last_login', '—'))[:16].replace('T', ' '),
                         "สร้างเมื่อ":   str(u.get('created_at', '—'))[:10],
                     })
-                st.dataframe(pd.DataFrame(user_table), use_container_width=True, hide_index=True)
+                st.dataframe(pd.DataFrame(user_table), width='stretch', hide_index=True)
             else:
                 st.info("ไม่พบข้อมูลผู้ใช้")
 
@@ -3141,7 +3141,7 @@ if mode == "⚙️ แอดมิน (Admin Portal)":
                 chg_user = st.selectbox("เลือก User:", user_list, key="local_chg_user")
                 new_pw1  = st.text_input("รหัสผ่านใหม่:", type="password", key="local_pw1")
                 new_pw2  = st.text_input("ยืนยันรหัสผ่าน:", type="password", key="local_pw2")
-                if st.button("💾 บันทึกรหัสผ่านใหม่", use_container_width=True, key="local_btn_pw"):
+                if st.button("💾 บันทึกรหัสผ่านใหม่", width='stretch', key="local_btn_pw"):
                     if not new_pw1:
                         st.error("กรุณากรอกรหัสผ่านใหม่")
                     elif new_pw1 != new_pw2:
@@ -3163,7 +3163,7 @@ if mode == "⚙️ แอดมิน (Admin Portal)":
                 new_role  = st.selectbox("Role ใหม่:", ["viewer", "admin", "super_admin"], key="local_mgmt_role")
                 col_r1, col_r2 = st.columns(2)
                 with col_r1:
-                    if st.button("🔄 เปลี่ยน Role", use_container_width=True, key="local_btn_role"):
+                    if st.button("🔄 เปลี่ยน Role", width='stretch', key="local_btn_role"):
                         try:
                             from supabase_sync import get_supabase_client
                             get_supabase_client().table('users').update({'role': new_role}).eq('username', mgmt_user).execute()
@@ -3171,7 +3171,7 @@ if mode == "⚙️ แอดมิน (Admin Portal)":
                         except Exception as e:
                             st.error(f"❌ {e}")
                 with col_r2:
-                    if st.button("🚫 ปิด User", use_container_width=True, key="local_btn_deact"):
+                    if st.button("🚫 ปิด User", width='stretch', key="local_btn_deact"):
                         ok = deactivate_user(mgmt_user)
                         if ok:
                             st.success(f"✅ ปิด account {mgmt_user} แล้ว")
@@ -3187,7 +3187,7 @@ if mode == "⚙️ แอดมิน (Admin Portal)":
             with c2: n_dname = st.text_input("ชื่อแสดง:", key="local_n_dname")
             with c3: n_role  = st.selectbox("Role:", ["viewer", "admin", "super_admin"], key="local_n_role")
             with c4: n_pw    = st.text_input("รหัสผ่าน:", type="password", key="local_n_pw")
-            if st.button("✅ สร้าง User ใหม่", use_container_width=True, key="local_btn_create"):
+            if st.button("✅ สร้าง User ใหม่", width='stretch', key="local_btn_create"):
                 if n_uname and n_pw and n_dname:
                     ok = create_user(n_uname.strip().lower(), n_pw, n_role, n_dname)
                     if ok:
@@ -3201,11 +3201,11 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
     
     st.sidebar.markdown("---")
     st.sidebar.markdown("### 🧭 เมนูเจาะลึกสถานการณ์")
-    if st.sidebar.button("🏠 สรุปสถานการณ์ (Overview)", use_container_width=True): change_tab("🏠 สรุปสถานการณ์ (Overview)")
-    if st.sidebar.button("🚨 รถสวมทะเบียน", use_container_width=True): change_tab("🚨 รถสวมทะเบียน")
-    if st.sidebar.button("🚘 ขบวนรถลำเลียง", use_container_width=True): change_tab("🚘 ขบวนรถลำเลียง")
-    if st.sidebar.button("🔍 รถพฤติกรรมต้องสงสัย", use_container_width=True): change_tab("🔄 พฤติกรรมมุดชายแดน")
-    if st.sidebar.button("⭐ รถที่น่าสนใจ (Watch List)", use_container_width=True): change_tab("⭐ รถที่น่าสนใจ")
+    if st.sidebar.button("🏠 สรุปสถานการณ์ (Overview)", width='stretch'): change_tab("🏠 สรุปสถานการณ์ (Overview)")
+    if st.sidebar.button("🚨 รถสวมทะเบียน", width='stretch'): change_tab("🚨 รถสวมทะเบียน")
+    if st.sidebar.button("🚘 ขบวนรถลำเลียง", width='stretch'): change_tab("🚘 ขบวนรถลำเลียง")
+    if st.sidebar.button("🔍 รถพฤติกรรมต้องสงสัย", width='stretch'): change_tab("🔄 พฤติกรรมมุดชายแดน")
+    if st.sidebar.button("⭐ รถที่น่าสนใจ (Watch List)", width='stretch'): change_tab("⭐ รถที่น่าสนใจ")
     
     conn = sqlite3.connect(DB_PATH)
     try:
@@ -3391,7 +3391,7 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
                                 'plate': 'ทะเบียน', 'วันที่พบ': 'วันที่พบ (วัน)',
                                 'คะแนนสูงสุด': 'Score สูงสุด'
                             })
-                            st.dataframe(disp_df, use_container_width=True, hide_index=True)
+                            st.dataframe(disp_df, width='stretch', hide_index=True)
                             excel_download_button(build_2col_export_df(df_cat), f"repeat_{cat_name}.xlsx",
                                                   f"📥 Export {cat_name} (Excel)")
                             st.markdown("---")
@@ -3517,7 +3517,7 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
                                     st.markdown("---")
                                     if st.button(f"🗺️ ดูเส้นทาง & รายละเอียดเต็ม: {plate_r}",
                                                  key=f"btn_dossier_{cat_name}_{plate_r}",
-                                                 use_container_width=True):
+                                                 width='stretch'):
                                         st.session_state[f'show_dossier_{cat_name}_{plate_r}'] = True
                                     if st.session_state.get(f'show_dossier_{cat_name}_{plate_r}'):
                                         try:
@@ -3565,16 +3565,16 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
                     with col1: st.markdown(f"<div class='metric-card card-apex'><div class='metric-label'>🚨 ระดับสูงสุด</div><div class='metric-value'>{len(apex_df)}</div></div>", unsafe_allow_html=True)
                     with col2:
                         st.markdown(f"<div class='metric-card card-clone'><div class='metric-label'>🚗 สวมทะเบียน</div><div class='metric-value'>{cat_cloned}</div></div>", unsafe_allow_html=True)
-                        if st.button("🔍 เจาะลึก", key="btn_clone_d", use_container_width=True): change_tab("🚨 รถสวมทะเบียน"); st.rerun()
+                        if st.button("🔍 เจาะลึก", key="btn_clone_d", width='stretch'): change_tab("🚨 รถสวมทะเบียน"); st.rerun()
                     with col3:
                         st.markdown(f"<div class='metric-card card-car'><div class='metric-label'>🏎️ ขบวนรถยนต์</div><div class='metric-value'>{cat_convoy_car}</div></div>", unsafe_allow_html=True)
-                        if st.button("🔍 เจาะลึก", key="btn_car_d", use_container_width=True): change_tab("🚘 ขบวนรถลำเลียง"); st.rerun()
+                        if st.button("🔍 เจาะลึก", key="btn_car_d", width='stretch'): change_tab("🚘 ขบวนรถลำเลียง"); st.rerun()
                     with col4:
                         st.markdown(f"<div class='metric-card card-anomaly'><div class='metric-label'>🔄 รถต้องสงสัย</div><div class='metric-value'>{cat_others}</div></div>", unsafe_allow_html=True)
-                        if st.button("🔍 เจาะลึก", key="btn_anomaly_d", use_container_width=True): change_tab("🔄 พฤติกรรมมุดชายแดน"); st.rerun()
+                        if st.button("🔍 เจาะลึก", key="btn_anomaly_d", width='stretch'): change_tab("🔄 พฤติกรรมมุดชายแดน"); st.rerun()
                     with col5:
                         st.markdown(f"<div class='metric-card card-watch'><div class='metric-label'>⭐ Watch List วันนี้</div><div class='metric-value'>{_watch_today}</div></div>", unsafe_allow_html=True)
-                        if st.button("🔍 เจาะลึก", key="btn_watch_d", use_container_width=True): change_tab("⭐ รถที่น่าสนใจ"); st.rerun()
+                        if st.button("🔍 เจาะลึก", key="btn_watch_d", width='stretch'): change_tab("⭐ รถที่น่าสนใจ"); st.rerun()
 
 
 
@@ -3617,7 +3617,7 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
                          """
                         m_agg.get_root().html.add_child(folium.Element(legend_html))
                             
-                    components.html(m_agg.get_root().render(), height=450)
+                    st.html(m_agg.get_root().render())
                     st.markdown("---")
 
                 _show_clock = st.toggle("🕒 แสดงนาฬิกาประเมินสถานการณ์เชิงยุทธวิธี (Advanced Tactical Crime Clock)", value=False, key="tog_clock_ov")
@@ -3648,7 +3648,7 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
                         fig_clock.update_layout(polar=dict(radialaxis=dict(visible=False, range=[0, 100]), angularaxis=dict(direction="clockwise", rotation=90, categoryorder='array', categoryarray=[f"{i:02d}:00" for i in range(24)])), showlegend=True, height=550, margin=dict(t=40, b=40, l=40, r=40), legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
                         
                         col_c1, col_c2 = st.columns([55, 45])
-                        with col_c1: st.plotly_chart(fig_clock, use_container_width=True)
+                        with col_c1: st.plotly_chart(fig_clock, width='stretch')
                         with col_c2:
                             st.markdown(f"""
                             <div class='tactical-brief'>
@@ -3660,7 +3660,7 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
                             """, unsafe_allow_html=True)
                             st.markdown("**📋 ตารางข้อมูลสถานการณ์: ห้วงเวลา และ จุดติดตั้งกล้อง**")
                             if metrics.get('tactical_table'):
-                                st.dataframe(pd.DataFrame(metrics['tactical_table']), use_container_width=True, hide_index=True)
+                                st.dataframe(pd.DataFrame(metrics['tactical_table']), width='stretch', hide_index=True)
 
 
             elif st.session_state['nav_tab'] == "🚨 รถสวมทะเบียน":
