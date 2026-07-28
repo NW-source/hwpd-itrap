@@ -2486,7 +2486,7 @@ def render_repeat_offender_dossier(plate, historical_db, dates_list):
                         tooltip=f"สิ้นสุด {d}: {dd['จุดติดตั้งกล้อง'].iloc[-1]}"
                     ).add_to(m)
 
-            st.iframe(m.get_root().render(), height=460)
+            st.components.v1.html(m.get_root().render(), height=460)
 
 
 def run_realtime_intelligence(active_db_pl):
@@ -2661,7 +2661,7 @@ def render_case_dossier(selected_target, active_db, priority_df):
                     tuple(_normal_coords), tuple(_ghost_coords),
                     show_real, show_fake
                 )
-            st.iframe(_map_html, height=460)
+            st.components.v1.html(_map_html, height=460)
 
     else:
         if target_info['ประเภท'] == "กลุ่มเป้าหมายความมั่นคงระดับสูงสุด":
@@ -2749,7 +2749,7 @@ def render_case_dossier(selected_target, active_db, priority_df):
             _map_html = _build_tactical_map_html(
                 _lat_m, _lon_m, tuple(_car_tracks), is_convoy
             )
-        st.iframe(_map_html, height=460)
+        st.components.v1.html(_map_html, height=460)
 
     if is_convoy:
         st.markdown("### 🔗 ตารางวิเคราะห์โครงข่ายขบวนรถ (Convoy Formation Analysis)")
@@ -3868,7 +3868,7 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
                          """
                         m_agg.get_root().html.add_child(folium.Element(legend_html))
                             
-                    st.iframe(m_agg.get_root().render(), height=460)
+                    st.components.v1.html(m_agg.get_root().render(), height=460)
                     st.markdown("---")
 
                 _show_clock = st.toggle("🕒 แสดงนาฬิกาประเมินสถานการณ์เชิงยุทธวิธี (Advanced Tactical Crime Clock)", value=False, key="tog_clock_ov")
