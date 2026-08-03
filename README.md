@@ -1,4 +1,15 @@
-﻿# HWPD 60 i-Trap Intelligence System
+---
+title: HWPD i-Trap Command Center
+emoji: 🚔
+colorFrom: blue
+colorTo: indigo
+sdk: streamlit
+sdk_version: 1.60.0
+app_file: cloud_app.py
+pinned: false
+---
+
+# HWPD 60 i-Trap Intelligence System
 ## คู่มือการติดตั้งและใช้งานสำหรับเจ้าหน้าที่
 
 ---
