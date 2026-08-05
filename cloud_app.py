@@ -3563,9 +3563,20 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
 
         reports_full_df = _load_all_reports_cloud()
 
-        # 3. Pull Parquet Data for maps & dossier (cached 30 min ลด egress)
-        if _CLOUD_ENABLED and is_supabase_configured():
+        # ★ LAZY LOAD: โหลด Parquet เฉพาะเมื่อได้ใช้งานจริง (ประหยัด RAM ~150MB ต่อ rerun)
+        _TABS_NEED_ACTIVE_DB = {
+            "🚨 รถสวมทะเบียน",
+            "🚘 ขบวนรถลำเลียง",
+            "🔄 พฤติกรรมมุดชายแดน",
+            "⭐ รถที่น่าสนใจ",
+        }
+        _current_nav = st.session_state.get('nav_tab', '')
+        _need_active_db = _current_nav in _TABS_NEED_ACTIVE_DB
+
+        if _need_active_db and _CLOUD_ENABLED and is_supabase_configured():
             historical_db_pl = _cached_parquet_cloud(selected_date)
+        else:
+            historical_db_pl = pl.DataFrame()  # ไม่ซื้อ data ที่หนักถ้าไม่จำเป็น
 
         if not historical_db_pl.is_empty():
             # ★ PERF: filter ใน Polars ก่อน → แปลงเฉพาะ slice (ประหยัด RAM + เวลา ~5-10x)
@@ -3664,7 +3675,8 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
                     metrics['tactical_table'] = tactical_table.to_dict('records')
             return metrics
 
-        if not metrics:
+        # ★ LAZY: คำนวณ map_stats + clock เฉพาะเมื่อเปิด Overview — หน้าอื่นไม่ต้องการ
+        if not metrics and _current_nav == "🏠 สรุปสถานการณ์ (Overview)":
             metrics = _compute_fallback_metrics(priority_df, active_db)
 
         # ★ PERF: pd.to_numeric เร็วกว่า astype chain
@@ -3829,7 +3841,21 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
                     if _sel_str != _today_str:
                         st.empty()
                     else:
-                        _rep = repeat_offender_analysis(_load_reports_for_repeat(), selected_date, window_days=30, min_days=2)
+                        # ★ LAZY: โหลด 30-day report เฉพาะเมื่อ tab นี้ถูกกดเปิดจริง
+                        # ใช้ button-click toggle แทนการโหลดทุก rerun
+                        _rep_key = f"_rep_loaded_{selected_date}"
+                        if _rep_key not in st.session_state:
+                            st.session_state[_rep_key] = False
+
+                        if not st.session_state[_rep_key]:
+                            if st.button("🔁 โหลดข้อมูลรถวิ่งซ้ำ 30 วัน", key="btn_load_rep", type="primary"):
+                                st.session_state[_rep_key] = True
+                                st.rerun()
+                            else:
+                                st.info("กดปุ่มด้านบนเพื่อโหลดข้อมูลรถวิ่งซ้ำย้อนหลัง 30 วัน (ข้อมูลชุดใหญ่ โหลดเมื่อต้องการ)")
+                                _rep = pd.DataFrame()
+                        else:
+                            _rep = repeat_offender_analysis(_load_reports_for_repeat(), selected_date, window_days=30, min_days=2)
 
                         if _rep.empty:
                             st.info("⚠️ ยังไม่พบทะเบียนที่ปรากฏซ้ำ ≥ 2 วัน ในช่วง 30 วันที่ผ่านมา — ต้องมีข้อมูลอย่างน้อย 2 วันในระบบ")
