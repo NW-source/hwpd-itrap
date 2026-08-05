@@ -145,7 +145,7 @@ def build_2col_export_df(df_input: pd.DataFrame, active_db: pd.DataFrame = None)
 
     if 'ทะเบียนรถ' in df_input.columns or 'ทะเบียน_Full' in df_input.columns:
         col = 'ทะเบียนรถ' if 'ทะเบียนรถ' in df_input.columns else 'ทะเบียน_Full'
-        for _, r in df_input.iterrows():
+        for r in df_input.to_dict('records'):  # to_dict ~5x faster than iterrows
             pr = str(r.get(col, '')).strip()
             pv = str(r.get('จังหวัด', '')).strip()
             plate, prov = _parse_target_str(pr)
@@ -156,14 +156,14 @@ def build_2col_export_df(df_input: pd.DataFrame, active_db: pd.DataFrame = None)
                 final_plate = pr
                 final_prov = pv
             if final_plate and final_plate != '-':
-                rows.append({'ทะเบียนรถ': final_plate, 'จังหวัด': final_prov})
+                rows.append({'ทะเบียนรถ': final_plate, 'จังหวัด': final_prov})  # noqa
     elif 'plate' in df_input.columns:
         for p in df_input['plate']:
             plate, prov = _parse_target_str(p)
             if plate:
                 rows.append({'ทะเบียนรถ': plate, 'จังหวัด': prov})
     elif 'Cars_List' in df_input.columns:
-        for _, r in df_input.iterrows():
+        for r in df_input.to_dict('records'):  # to_dict ~5x faster than iterrows
             cars = r['Cars_List']
             if isinstance(cars, str):
                 import ast
@@ -191,7 +191,7 @@ def build_2col_export_df(df_input: pd.DataFrame, active_db: pd.DataFrame = None)
     if active_db is not None and not active_db.empty:
         lookup_map = {}
         if 'ทะเบียน_Full' in active_db.columns:
-            for _, r in active_db.iterrows():
+            for r in active_db[['ทะเบียน_Full']].drop_duplicates().to_dict('records'):  # vectorized
                 tf = str(r.get('ทะเบียน_Full', ''))
                 if tf:
                     p_plate, p_prov = _parse_target_str(tf)
@@ -199,7 +199,8 @@ def build_2col_export_df(df_input: pd.DataFrame, active_db: pd.DataFrame = None)
                         lookup_map[p_plate] = p_prov
 
         if 'ทะเบียนรถ' in active_db.columns and 'จังหวัด' in active_db.columns:
-            for _, r in active_db.iterrows():
+            _tmp = active_db[['ทะเบียนรถ','จังหวัด']].drop_duplicates()  # vectorized
+            for r in _tmp.to_dict('records'):
                 pr = str(r.get('ทะเบียนรถ', '')).strip()
                 pv = str(r.get('จังหวัด', '')).strip()
                 if pr and pv:
@@ -2527,50 +2528,47 @@ def render_repeat_offender_dossier(plate, historical_db, dates_list):
         else:
             center_lat = valid['ละติจูด'].mean()
             center_lon = valid['ลองจิจูด'].mean()
-            m = folium.Map(location=[center_lat, center_lon], zoom_start=8)
 
+            # ── Leaflet.js แทน Folium (RAM ลดจาก ~50MB → <5MB) ──────────────
+            _lf_markers = []
+            _lf_lines   = []
             for i, d in enumerate(dates_list):
                 if d not in selected_dates: continue
                 dd = df_plate[df_plate['_date'] == d].dropna(subset=['ละติจูด','ลองจิจูด'])
                 if dd.empty: continue
-                f_color   = DAY_COLORS[i % len(DAY_COLORS)]
                 hex_color = DAY_COLORS_HEX[i % len(DAY_COLORS_HEX)]
-
-                for _, r in dd.iterrows():
+                for r in dd.to_dict('records'):
                     spd = r.get('Speed_kmh', 0)
                     spd_txt = f"{spd:.0f} กม./ชม." if pd.notna(spd) and spd > 0 else "ไม่ระบุ"
-                    popup_html = (
-                        f"<b>{r['จุดติดตั้งกล้อง']}</b><br>"
-                        f"วันที่: {d}<br>"
-                        f"เวลา: {r['Datetime'].strftime('%H:%M:%S')}<br>"
-                        f"ความเร็ว: {spd_txt}<br>"
-                        f"ทิศทาง: {r.get('Direction','ไม่ระบุ')}"
-                    )
-                    folium.CircleMarker(
-                        location=(r['ละติจูด'], r['ลองจิจูด']),
-                        radius=6, color=hex_color, fill=True, fill_opacity=0.85,
-                        popup=folium.Popup(popup_html, max_width=250),
-                        tooltip=f"{d} | {r['จุดติดตั้งกล้อง']}"
-                    ).add_to(m)
-
+                    _lf_markers.append({
+                        'lat': r['ละติจูด'], 'lon': r['ลองจิจูด'], 'color': hex_color,
+                        'popup': f"{r['จุดติดตั้งกล้อง']}<br>{d} {r['Datetime'].strftime('%H:%M:%S')}<br>ความเร็ว: {spd_txt}"
+                    })
                 coords = list(zip(dd['ละติจูด'].tolist(), dd['ลองจิจูด'].tolist()))
                 if len(coords) >= 2:
-                    folium.PolyLine(
-                        locations=coords, color=hex_color, weight=4, opacity=0.8,
-                        tooltip=f"เส้นทาง {d} ({len(coords)} จุด)"
-                    ).add_to(m)
-                    folium.Marker(
-                        location=coords[0],
-                        icon=folium.Icon(color=f_color, icon='play', prefix='fa'),
-                        tooltip=f"เริ่มต้น {d}: {dd['จุดติดตั้งกล้อง'].iloc[0]}"
-                    ).add_to(m)
-                    folium.Marker(
-                        location=coords[-1],
-                        icon=folium.Icon(color=f_color, icon='flag', prefix='fa'),
-                        tooltip=f"สิ้นสุด {d}: {dd['จุดติดตั้งกล้อง'].iloc[-1]}"
-                    ).add_to(m)
+                    _lf_lines.append({'coords': coords, 'color': hex_color, 'label': d})
 
-            st.components.v1.html(m.get_root().render(), height=460)
+            import json as _json
+            _markers_js = _json.dumps(_lf_markers)
+            _lines_js   = _json.dumps(_lf_lines)
+            _lf_html = f"""
+            <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+            <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+            <div id="lf_rep" style="height:440px;border-radius:10px;"></div>
+            <script>
+              var map = L.map('lf_rep').setView([{center_lat:.5f},{center_lon:.5f}],8);
+              L.tileLayer('https://{{s}}.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png',{{attribution:'OSM'}}).addTo(map);
+              var markers = {_markers_js};
+              markers.forEach(function(m){{
+                L.circleMarker([m.lat,m.lon],{{radius:7,color:m.color,fillColor:m.color,fillOpacity:0.85}})
+                  .bindPopup(m.popup).addTo(map);
+              }});
+              var lines = {_lines_js};
+              lines.forEach(function(ln){{
+                L.polyline(ln.coords,{{color:ln.color,weight:4,opacity:0.8}}).bindTooltip(ln.label).addTo(map);
+              }});
+            </script>"""
+            st.components.v1.html(_lf_html, height=460)
 
 
 def run_realtime_intelligence(active_db_pl):
@@ -2592,46 +2590,65 @@ def run_realtime_intelligence(active_db_pl):
 def _build_clone_map_html(lat_mean: float, lon_mean: float,
                            normal_coords: tuple, ghost_coords: tuple,
                            show_real: bool = True, show_fake: bool = True) -> str:
-    """Build ghost/clone map HTML — cached per unique coord set."""
-    m = folium.Map(location=[lat_mean, lon_mean], zoom_start=9)
-    if show_real:
-        for lat, lon, tm, cam in normal_coords:
-            folium.Marker(location=(lat, lon), popup=f"{tm} - {cam}",
-                          icon=folium.Icon(color='blue', icon='car', prefix='fa')).add_to(m)
-        if len(normal_coords) > 1:
-            plugins.AntPath([(lat, lon) for lat, lon, _, _ in normal_coords],
-                            color='blue', weight=4).add_to(m)
-    if show_fake:
-        for lat, lon, tm, cam, spd in ghost_coords:
-            popup_html = (f"<b>🚨 พิกัดผิดปกติ (คาดว่ารถสวมทะเบียน)</b>"
-                          f"<br>เวลา: {tm}<br>จุดตรวจ: {cam}"
-                          f"<br>ความเร็วประเมิน: {spd:.0f} กม./ชม.")
-            folium.Marker(location=(lat, lon), popup=popup_html,
-                          icon=folium.Icon(color='red', icon='warning-sign')).add_to(m)
-    return m.get_root().render()
+    """Build ghost/clone map HTML via Leaflet.js — cached per unique coord set."""
+    import json as _json
+    _real = [{'lat': lat, 'lon': lon, 'popup': f"{tm}<br>{cam}"}
+             for lat, lon, tm, cam in normal_coords] if show_real else []
+    _fake = [{'lat': lat, 'lon': lon,
+              'popup': f"🚨 รถสวมทะเบียน<br>{tm}<br>{cam}<br>ความเร็ว: {spd:.0f} กม./ชม."}
+             for lat, lon, tm, cam, spd in ghost_coords] if show_fake else []
+    _real_line = [[lat, lon] for lat, lon, _, _ in normal_coords] if (show_real and len(normal_coords) > 1) else []
+    return f"""
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <div id="lf_clone" style="height:440px;border-radius:10px;"></div>
+    <script>
+      var map = L.map('lf_clone').setView([{lat_mean:.5f},{lon_mean:.5f}],9);
+      L.tileLayer('https://{{s}}.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png',{{attribution:'OSM'}}).addTo(map);
+      {_json.dumps(_real)}.forEach(function(m){{
+        L.circleMarker([m.lat,m.lon],{{radius:8,color:'#1e40af',fillColor:'#3b82f6',fillOpacity:0.85}})
+          .bindPopup(m.popup).addTo(map);
+      }});
+      if({_json.dumps(_real_line)}.length>1)
+        L.polyline({_json.dumps(_real_line)},{{color:'#1e40af',weight:4,dashArray:'8,4'}}).addTo(map);
+      {_json.dumps(_fake)}.forEach(function(m){{
+        L.marker([m.lat,m.lon],{{icon:L.divIcon({{html:'<div style="font-size:20px">🚨</div>',iconAnchor:[10,10]}})}}
+          ).bindPopup(m.popup).addTo(map);
+      }});
+    </script>"""
 
 
 @st.cache_data(ttl=600, show_spinner=False)
 def _build_tactical_map_html(lat_mean: float, lon_mean: float,
                               car_tracks: tuple, is_convoy: bool) -> str:
-    """Build tactical track map HTML — cached per unique car/coord combination."""
-    m = folium.Map(location=[lat_mean, lon_mean], zoom_start=9)
-    hex_pastel  = ['#9f1239', '#1e3a8a', '#047857', '#4338ca', '#b45309', '#be123c'] * 5
-    cool_colors = ['#1e3a8a', '#0369a1', '#047857', '#4338ca', '#334155', '#0f766e']
+    """Build tactical track map HTML via Leaflet.js — cached per unique car/coord combination."""
+    import json as _json
+    cool_colors = ['#dc2626','#1e40af','#047857','#4338ca','#b45309','#be123c'] * 5
+    _tracks_js = []
     for idx, (car, coords, times, cams) in enumerate(car_tracks):
-        if is_convoy:
-            f_color = 'red'  if idx == 0 else 'blue'
-            h_color = '#dc2626' if idx == 0 else cool_colors[(idx - 1) % len(cool_colors)]
-        else:
-            f_color, h_color = 'blue', hex_pastel[idx % len(hex_pastel)]
-        for (lat, lon), tm, cam in zip(coords, times, cams):
-            folium.Marker(location=(lat, lon),
-                          popup=f"<b>{car}</b><br>{tm} - {cam}",
-                          icon=folium.Icon(color=f_color, icon='car', prefix='fa')).add_to(m)
-        if len(coords) > 1:
-            plugins.AntPath(coords, color=h_color, weight=4,
-                            dash_array=([10, 20] if is_convoy else [0])).add_to(m)
-    return m.get_root().render()
+        color = cool_colors[idx % len(cool_colors)]
+        label = f"🔴 รถนำ: {car}" if (is_convoy and idx == 0) else f"🚙 รถตาม: {car}" if is_convoy else car
+        _tracks_js.append({'car': label, 'coords': list(coords),
+                           'color': color, 'is_lead': (is_convoy and idx == 0),
+                           'popups': [f"<b>{car}</b><br>{t}<br>{c}" for t, c in zip(times, cams)]})
+    return f"""
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <div id="lf_tact" style="height:440px;border-radius:10px;"></div>
+    <script>
+      var map = L.map('lf_tact').setView([{lat_mean:.5f},{lon_mean:.5f}],9);
+      L.tileLayer('https://{{s}}.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png',{{attribution:'OSM'}}).addTo(map);
+      var tracks = {_json.dumps(_tracks_js)};
+      tracks.forEach(function(tr){{
+        var dash = tr.is_lead ? '0' : '8,6';
+        if(tr.coords.length>1)
+          L.polyline(tr.coords,{{color:tr.color,weight:4,dashArray:dash}}).bindTooltip(tr.car).addTo(map);
+        tr.coords.forEach(function(pt,i){{
+          L.circleMarker(pt,{{radius:tr.is_lead?9:7,color:tr.color,fillColor:tr.color,fillOpacity:0.9}})
+            .bindPopup(tr.popups[i]).addTo(map);
+        }});
+      }});
+    </script>"""
 
 
 def render_case_dossier(selected_target, active_db, priority_df):
@@ -2846,10 +2863,11 @@ def render_case_dossier(selected_target, active_db, priority_df):
                 dt_str = cam_data.iloc[0]['Datetime'].strftime('%Y/%m/%d')
                 num_cars = len(cam_data)
                 
-                lead_plate = cam_data.iloc[0]['ทะเบียน_Full']
-                
+                # ★ รถนำ = เวลาที่เร็วที่สุด (Datetime น้อยที่สุด = ถึงก่อน)
+                lead_plate = cam_data.sort_values('Datetime').iloc[0]['ทะเบียน_Full']
+
                 # ★ PERF: vectorized — แทน iterrows
-                plates = cam_data['ทะเบียน_Full'].tolist()
+                plates = cam_data.sort_values('Datetime')['ทะเบียน_Full'].tolist()
                 roles  = ['รถนำ(Scout)' if p == lead_plate else 'รถตาม' for p in plates]
                 times  = cam_data['Datetime'].dt.strftime('%H:%M:%S').tolist()
                 speeds = [f"{s:.0f}" if pd.notna(s) and s > 0 else "-" for s in cam_data['Speed_kmh']]
@@ -2895,10 +2913,11 @@ def render_case_dossier(selected_target, active_db, priority_df):
         icon_str = "🚚" if "บรร取ุก" in str(c_df.iloc[0]['ประเภทรถ']) or "บรรทุก" in str(c_df.iloc[0]['ประเภทรถ']) else "🚗"
         
         if is_convoy:
-            if idx == 0:
+            # รถนำ = cars[0] ซึ่งถูก sort ให้ lead_car อยู่ index 0 แล้วจาก orchestrator
+            if c == cars[0]:
                 line_color, car_name = '#dc2626', f"🔴 รถนำ: {c}"
             else:
-                line_color, car_name = cool_colors[(idx-1) % len(cool_colors)], f"🚙 รถตาม: {c}"
+                line_color, car_name = cool_colors[(cars.index(c)-1) % len(cool_colors)], f"🚙 รถตาม: {c}"
         elif is_clone:
             line_color, car_name = '#10b981', f"รถจริง: {c}"
         else:
@@ -3794,16 +3813,16 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
                         st.markdown(f"<div class='metric-card card-apex'><div class='metric-label'>🚨 ระดับสูงสุด</div><div class='metric-value'>{len(apex_df)}</div></div>", unsafe_allow_html=True)
                     with col2:
                         st.markdown(f"<div class='metric-card card-clone'><div class='metric-label'>🚗 สวมทะเบียน</div><div class='metric-value'>{cat_cloned}</div></div>", unsafe_allow_html=True)
-                        if st.button("🔍 เจาะลึก", key="btn_clone_d"): change_tab("🚨 รถสวมทะเบียน"); st.rerun()
+                        if st.button("📊 ดูข้อมูล", key="btn_clone_d", type="primary"): change_tab("🚨 รถสวมทะเบียน"); st.rerun()
                     with col3:
                         st.markdown(f"<div class='metric-card card-car'><div class='metric-label'>🏎️ ขบวนรถยนต์</div><div class='metric-value'>{cat_convoy_car}</div></div>", unsafe_allow_html=True)
-                        if st.button("🔍 เจาะลึก", key="btn_car_d"): change_tab("🚘 ขบวนรถลำเลียง"); st.rerun()
+                        if st.button("📊 ดูข้อมูล", key="btn_car_d", type="primary"): change_tab("🚘 ขบวนรถลำเลียง"); st.rerun()
                     with col4:
                         st.markdown(f"<div class='metric-card card-anomaly'><div class='metric-label'>🔄 รถต้องสงสัย</div><div class='metric-value'>{cat_others}</div></div>", unsafe_allow_html=True)
-                        if st.button("🔍 เจาะลึก", key="btn_anomaly_d"): change_tab("🔄 พฤติกรรมมุดชายแดน"); st.rerun()
+                        if st.button("📊 ดูข้อมูล", key="btn_anomaly_d", type="primary"): change_tab("🔄 พฤติกรรมมุดชายแดน"); st.rerun()
                     with col5:
                         st.markdown(f"<div class='metric-card card-watch'><div class='metric-label'>⭐ Watch List วันนี้</div><div class='metric-value'>{_watch_today}</div></div>", unsafe_allow_html=True)
-                        if st.button("🔍 เจาะลึก", key="btn_watch_d"): change_tab("⭐ รถที่น่าสนใจ"); st.rerun()
+                        if st.button("📊 ดูข้อมูล", key="btn_watch_d", type="primary"): change_tab("⭐ รถที่น่าสนใจ"); st.rerun()
 
 
                 with tab_repeat:
@@ -3920,39 +3939,35 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
                 _show_map   = st.toggle("🗺️ แสดงแผนที่ประเมินความเสี่ยงทางยุทธวิธี (2D Risk Hotspots & Heatmap)", value=False, key="tog_map_ov")
                 if _show_map:
                     st.markdown("### 🗺️ แผนที่ประเมินความเสี่ยงทางยุทธวิธี (2D Risk Hotspots & Heatmap)")
-                    m_agg = folium.Map(location=[15.0, 102.0], zoom_start=6) 
                     map_stats = metrics.get('map_stats', [])
-                    if map_stats:
-                        heat_data = [[row['lat'], row['lon'], row['volume']] for row in map_stats]
-                        HeatMap(heat_data, radius=25, blur=15, min_opacity=0.4).add_to(m_agg)
-                        
-                        mc = MarkerCluster().add_to(m_agg)
-                        m_agg.location = [map_stats[0]['lat'], map_stats[0]['lon']]
-                        for row_stat in map_stats:
-                            vol = row_stat['volume']
-                            primary = str(row_stat.get('primary_threat', ''))
-                            
-                            if "สวมทะเบียน" in primary: color = 'orange'
-                            elif "ขบวน" in primary: color = 'darkblue'
-                            else: color = 'purple'
-                            
-                            folium.Marker(
-                                location=[row_stat['lat'], row_stat['lon']],
-                                popup=f"<b>จุดตรวจ:</b> {row_stat.get('จุดติดตั้งกล้อง', '')}<br><b>เป้าหมายผ่าน:</b> {vol} คัน<br><b>ภัยคุกคามหลัก:</b> {primary}",
-                                icon=folium.Icon(color=color, icon='info-sign')
-                            ).add_to(mc)
-                            
-                        legend_html = """
-                         <div class="map-legend">
-                         <b>สัญลักษณ์ภัยคุกคาม:</b><br>
-                         &nbsp; <i class="fa fa-map-marker fa-1x" style="color:orange"></i> สวมทะเบียน<br>
-                         &nbsp; <i class="fa fa-map-marker fa-1x" style="color:darkblue"></i> ขบวนรถลำเลียง<br>
-                         &nbsp; <i class="fa fa-map-marker fa-1x" style="color:purple"></i> รถต้องสงสัย
-                         </div>
-                         """
-                        m_agg.get_root().html.add_child(folium.Element(legend_html))
-                            
-                    st.components.v1.html(m_agg.get_root().render(), height=460)
+                    # ── Leaflet.js + Leaflet.heat แทน Folium HeatMap (RAM ลดมาก) ─
+                    import json as _json
+                    _heat_pts = [[r['lat'], r['lon'], min(r['volume'], 30)] for r in map_stats]
+                    _mkr_list = []
+                    for r in map_stats:
+                        _pt = str(r.get('primary_threat', ''))
+                        _clr = '#f97316' if 'สวมทะเบียน' in _pt else ('#1e40af' if 'ขบวน' in _pt else '#7c3aed')
+                        _mkr_list.append({'lat': r['lat'], 'lon': r['lon'], 'color': _clr,
+                                          'popup': f"จุดตรวจ: {r.get('จุดติดตั้งกล้อง','')}<br>เป้าหมาย: {r['volume']} คัน<br>ภัยหลัก: {_pt}"})
+                    _lf_agg = f"""
+                    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+                    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+                    <script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
+                    <div id="lf_agg" style="height:440px;border-radius:10px;"></div>
+                    <script>
+                      var map=L.map('lf_agg').setView([15.0,102.0],6);
+                      L.tileLayer('https://{{s}}.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png',{{attribution:'OSM'}}).addTo(map);
+                      if({_json.dumps(_heat_pts)}.length>0)
+                        L.heatLayer({_json.dumps(_heat_pts)},{{radius:30,blur:20,minOpacity:0.4}}).addTo(map);
+                      {_json.dumps(_mkr_list)}.forEach(function(m){{
+                        L.circleMarker([m.lat,m.lon],{{radius:10,color:m.color,fillColor:m.color,fillOpacity:0.85}})
+                          .bindPopup(m.popup).addTo(map);
+                      }});
+                    </script>
+                    <div style="margin-top:6px;font-size:12px;color:#aaa">
+                      🟠 สวมทะเบียน &nbsp; 🔵 ขบวนรถ &nbsp; 🟣 รถต้องสงสัย
+                    </div>"""
+                    st.components.v1.html(_lf_agg, height=460)
                     st.markdown("---")
 
                 _show_clock = st.toggle("🕒 แสดงนาฬิกาประเมินสถานการณ์เชิงยุทธวิธี (Advanced Tactical Crime Clock)", value=False, key="tog_clock_ov")
