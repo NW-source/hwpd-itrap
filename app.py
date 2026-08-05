@@ -5,7 +5,6 @@ import numpy as np
 import folium
 import os
 import re
-import time
 import sqlite3
 from datetime import datetime, timedelta
 from folium import plugins
@@ -1484,9 +1483,90 @@ def run_intelligence_orchestrator(active_db_pl,
         for _p in active_db[e1_sameregion   & _cam_diff]['ทะเบียน_Full'].unique():
             if _p not in _e1_type: _e1_type[_p] = 'region'
 
+        # ── OCR Confusion Matrix: คู่อักษรที่กล้องมักอ่านสลับกัน ─────────────────
+        _OCR_CONFUSION = [
+            ('ย', 'บ'), ('ย', 'ข'), ('ย', 'ษ'), ('บ', 'ข'), ('บ', 'ษ'),
+            ('ค', 'ด'), ('ค', 'ต'), ('ด', 'ต'),
+            ('ว', 'ว'), ('ล', 'า'),
+        ]
+        _all_plates_today = set(active_db['ทะเบียน_Full'].unique())
+
+        def _ocr_error_score(plate, df_target):
+            """คำนวณคะแนนความน่าจะเป็น OCR Error (0-100)
+            ≥ 60 → ตัดออกจาก สวมทะเบียน ไปไว้ใน OCR Noise"""
+            score = 0
+
+            # Filter 1: โผล่ด่านเดียว (+40)
+            n_cams = df_target['จุดติดตั้งกล้อง'].nunique()
+            if n_cams <= 1:
+                score += 40
+
+            # Filter 2: คู่อักษรสับสน — ตรวจว่ามีทะเบียนคู่แฝดในข้อมูลวันเดียวกัน (+30)
+            _prefix = ''.join(c for c in plate if '\u0e00' <= c <= '\u0e7f')  # ตัวอักษรไทยใน prefix
+            for (a, b) in _OCR_CONFUSION:
+                if a in _prefix:
+                    _alt = plate.replace(a, b, 1)
+                    if _alt in _all_plates_today:
+                        score += 30
+                        break
+                if b in _prefix:
+                    _alt = plate.replace(b, a, 1)
+                    if _alt in _all_plates_today:
+                        score += 30
+                        break
+
+            # Filter 3: Time-Drift — ระยะ > 50 กม. แต่เวลาต่างกัน < 180 วินาที (+15)
+            _sorted_t = df_target.sort_values('Datetime')
+            if len(_sorted_t) >= 2:
+                for i in range(len(_sorted_t) - 1):
+                    _dt_sec = (_sorted_t.iloc[i+1]['Datetime'] - _sorted_t.iloc[i]['Datetime']).total_seconds()
+                    _dist   = _sorted_t.iloc[i+1].get('dist_km', 0) or 0
+                    if 0 < _dt_sec < 180 and _dist > 50:
+                        score += 15
+                        break
+
+            # Filter 4: Zig-Zag ทิศทางกระโดดสลับ (+20)
+            _dirs = [d for d in _sorted_t['Direction'] if d != 'ไม่ระบุ']
+            if len(_dirs) >= 3:
+                _flips = sum(1 for i in range(1, len(_dirs)) if _dirs[i] != _dirs[i-1])
+                if _flips >= 2:
+                    score += 20
+
+            # Filter 5: กล้องเดิมแจ้งซ้ำมาก (+15)
+            _cam_counts = df_target['จุดติดตั้งกล้อง'].value_counts()
+            if len(_cam_counts) == 1 and _cam_counts.iloc[0] >= 3:
+                score += 15
+
+            return score
+
+        # ── โหลด historical baseline (30 วันย้อนหลัง) สำหรับ Filter 6 ─────────────
+        try:
+            _hist_conn = sqlite3.connect(DB_PATH)
+            _hist_sql  = "SELECT plate FROM daily_reports_v2 WHERE report_date < date('now') AND report_date >= date('now', '-30 days') GROUP BY plate"
+            _hist_df   = pd.read_sql(_hist_sql, _hist_conn)
+            _hist_conn.close()
+            _known_plates_30d = set(_hist_df['plate'].tolist()) if not _hist_df.empty else set()
+        except Exception:
+            _known_plates_30d = set()
+
+        def _ocr_historical_adjust(plate, ocr_score):
+            """Filter 6: ปรับคะแนน OCR ตามประวัติ 30 วัน"""
+            if plate not in _known_plates_30d:
+                return ocr_score + 10  # ไม่เคยเห็นมาก่อน = น่าจะ OCR error
+            return ocr_score           # มีประวัติ = อาจเป็นสวมทะเบียนจริง
+
         for plate in e1_plates:
             df_target = active_db[active_db['ทะเบียน_Full'] == plate].sort_values('Datetime')
             if df_target.empty: continue
+
+            # ── ประมวล OCR Error Score ────────────────────────────────────────────
+            _ocr_score = _ocr_error_score(plate, df_target)
+            _ocr_score = _ocr_historical_adjust(plate, _ocr_score)
+
+            if _ocr_score >= 60:
+                # คะแนนสูง → น่าจะกล้องอ่านผิด → ข้ามไม่นับเป็นสวมทะเบียน
+                continue
+            # ─────────────────────────────────────────────────────────────────────
 
             max_speed = df_target['Speed_kmh'].max()
             r_night   = 20 if df_target.iloc[-1]['Is_Night'] else 0
