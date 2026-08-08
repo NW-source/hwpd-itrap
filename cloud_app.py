@@ -3881,16 +3881,16 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
                         st.markdown(f"<div class='metric-card card-apex'><div class='metric-label'>🚨 ระดับสูงสุด</div><div class='metric-value'>{len(apex_df)}</div></div>", unsafe_allow_html=True)
                     with col2:
                         st.markdown(f"<div class='metric-card card-clone'><div class='metric-label'>🚗 สวมทะเบียน</div><div class='metric-value'>{cat_cloned}</div></div>", unsafe_allow_html=True)
-                        if st.button("📊 ดูข้อมูล", key="btn_clone_d"): change_tab("🚨 รถสวมทะเบียน"); st.rerun()
+                        if st.button("📊 ดูข้อมูล", key="btn_clone_d", width='stretch'): change_tab("🚨 รถสวมทะเบียน"); st.rerun()
                     with col3:
                         st.markdown(f"<div class='metric-card card-car'><div class='metric-label'>🏎️ ขบวนรถยนต์</div><div class='metric-value'>{cat_convoy_car}</div></div>", unsafe_allow_html=True)
-                        if st.button("📊 ดูข้อมูล", key="btn_car_d"): change_tab("🚘 ขบวนรถลำเลียง"); st.rerun()
+                        if st.button("📊 ดูข้อมูล", key="btn_car_d", width='stretch'): change_tab("🚘 ขบวนรถลำเลียง"); st.rerun()
                     with col4:
                         st.markdown(f"<div class='metric-card card-anomaly'><div class='metric-label'>🔄 รถต้องสงสัย</div><div class='metric-value'>{cat_others}</div></div>", unsafe_allow_html=True)
-                        if st.button("📊 ดูข้อมูล", key="btn_anomaly_d"): change_tab("🔄 พฤติกรรมมุดชายแดน"); st.rerun()
+                        if st.button("📊 ดูข้อมูล", key="btn_anomaly_d", width='stretch'): change_tab("🔄 พฤติกรรมมุดชายแดน"); st.rerun()
                     with col5:
                         st.markdown(f"<div class='metric-card card-watch'><div class='metric-label'>⭐ Watch List วันนี้</div><div class='metric-value'>{_watch_today}</div></div>", unsafe_allow_html=True)
-                        if st.button("📊 ดูข้อมูล", key="btn_watch_d"): change_tab("⭐ รถที่น่าสนใจ"); st.rerun()
+                        if st.button("📊 ดูข้อมูล", key="btn_watch_d", width='stretch'): change_tab("⭐ รถที่น่าสนใจ"); st.rerun()
 
 
                 with tab_repeat:
