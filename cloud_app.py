@@ -4050,26 +4050,39 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
                     _mkr_list = []
                     for r in map_stats:
                         _pt = str(r.get('primary_threat', ''))
-                        _clr = '#f97316' if 'สวมทะเบียน' in _pt else ('#1e40af' if 'ขบวน' in _pt else '#7c3aed')
+                        if 'สวมทะเบียน' in _pt:
+                            _clr = '#f97316'
+                        elif 'ขบวน' in _pt:
+                            _clr = '#1e40af'
+                        elif 'สูงสุด' in _pt or 'ความมั่นคง' in _pt:
+                            _clr = '#dc2626'
+                        else:
+                            _clr = '#7c3aed'
                         _mkr_list.append({'lat': r['lat'], 'lon': r['lon'], 'color': _clr,
                                           'popup': f"จุดตรวจ: {r.get('จุดติดตั้งกล้อง','')}<br>เป้าหมาย: {r['volume']} คัน<br>ภัยหลัก: {_pt}"})
                     _lf_agg = f"""
                     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+                    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css"/>
+                    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css"/>
                     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
                     <script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
+                    <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
                     <div id="lf_agg" style="height:440px;border-radius:10px;"></div>
                     <script>
                       var map=L.map('lf_agg').setView([15.0,102.0],6);
                       L.tileLayer('https://{{s}}.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png',{{attribution:'OSM'}}).addTo(map);
                       if({_json.dumps(_heat_pts)}.length>0)
                         L.heatLayer({_json.dumps(_heat_pts)},{{radius:30,blur:20,minOpacity:0.4}}).addTo(map);
+                      var markers = L.markerClusterGroup({{maxClusterRadius:45, disableClusteringAtZoom:14}});
                       {_json.dumps(_mkr_list)}.forEach(function(m){{
-                        L.circleMarker([m.lat,m.lon],{{radius:10,color:m.color,fillColor:m.color,fillOpacity:0.85}})
-                          .bindPopup(m.popup).addTo(map);
+                        var mkr = L.circleMarker([m.lat,m.lon],{{radius:8,color:m.color,fillColor:m.color,fillOpacity:0.85}})
+                          .bindPopup(m.popup);
+                        markers.addLayer(mkr);
                       }});
+                      map.addLayer(markers);
                     </script>
                     <div style="margin-top:6px;font-size:12px;color:#aaa">
-                      🟠 สวมทะเบียน &nbsp; 🔵 ขบวนรถ &nbsp; 🟣 รถต้องสงสัย
+                      🔴 ระดับสูงสุด &nbsp; 🟠 สวมทะเบียน &nbsp; 🔵 ขบวนรถ &nbsp; 🟣 รถต้องสงสัย
                     </div>"""
                     st.components.v1.html(_lf_agg, height=490)
                     st.markdown("---")
