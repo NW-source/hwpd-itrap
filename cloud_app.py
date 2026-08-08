@@ -790,9 +790,9 @@ _dark_css = """    /* ═══ DARK MODE ═══ */
     .stButton > button:hover { background: linear-gradient(135deg, rgba(29,78,216,0.5), rgba(99,102,241,0.5)) !important; color: #dbeafe !important; box-shadow: 0 4px 16px rgba(59,130,246,0.2) !important; transform: translateY(-1px); }
     /* ★ ปุ่ม pill เล็กกึ่งกลาง — เจาะถึง <p> ข้างใน Streamlit button */
     :not([data-testid="stSidebar"]) .stButton > button {
-        width: fit-content !important; min-width: 80px !important; max-width: 160px !important;
+        width: 100% !important;
         padding: 4px 16px !important; font-size: 11px !important; line-height: 1.3 !important;
-        border-radius: 20px !important; display: block !important; margin: 0 auto !important;
+        border-radius: 20px !important;
     }
     :not([data-testid="stSidebar"]) .stButton > button p,
     :not([data-testid="stSidebar"]) .stButton > button span,
@@ -900,9 +900,9 @@ _light_css = """    /* ═══ LIGHT MODE ═══ */
     section[data-testid="stSidebar"] .stButton > button:hover { background: #e0e7ff !important; border-color: #6366f1 !important; color: #312e81 !important; }
     /* ★ light: ปุ่ม pill เล็กกึ่งกลาง — เจาะถึง <p> ข้างใน */
     :not([data-testid="stSidebar"]) .stButton > button {
-        width: fit-content !important; min-width: 80px !important; max-width: 160px !important;
+        width: 100% !important;
         padding: 4px 16px !important; font-size: 11px !important; line-height: 1.3 !important;
-        border-radius: 20px !important; display: block !important; margin: 0 auto !important;
+        border-radius: 20px !important;
     }
     :not([data-testid="stSidebar"]) .stButton > button p,
     :not([data-testid="stSidebar"]) .stButton > button span,
