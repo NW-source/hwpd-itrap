@@ -799,8 +799,13 @@ _dark_css = """    /* ═══ DARK MODE ═══ */
     :not([data-testid="stSidebar"]) .stButton > button div {
         font-size: 11px !important; line-height: 1.3 !important; margin: 0 !important; padding: 0 !important;
     }
-    :not([data-testid="stSidebar"]) .stButton {
+    :not([data-testid="stSidebar"]) .stButton,
+    :not([data-testid="stSidebar"]) [data-testid="stButton"] {
         width: 100% !important; display: flex !important;
+    }
+    :not([data-testid="stSidebar"]) .stButton > div,
+    :not([data-testid="stSidebar"]) [data-testid="stButton"] > div {
+        width: 100% !important;
     }
     /* Form submit buttons ต้อง full-width (เช่นปุ่ม ✅ ยืนยัน) */
     [data-testid="stFormSubmitButton"] button,
@@ -909,8 +914,13 @@ _light_css = """    /* ═══ LIGHT MODE ═══ */
     :not([data-testid="stSidebar"]) .stButton > button div {
         font-size: 11px !important; line-height: 1.3 !important; margin: 0 !important; padding: 0 !important;
     }
-    :not([data-testid="stSidebar"]) .stButton {
+    :not([data-testid="stSidebar"]) .stButton,
+    :not([data-testid="stSidebar"]) [data-testid="stButton"] {
         width: 100% !important; display: flex !important;
+    }
+    :not([data-testid="stSidebar"]) .stButton > div,
+    :not([data-testid="stSidebar"]) [data-testid="stButton"] > div {
+        width: 100% !important;
     }
     [data-testid="stFormSubmitButton"] button,
     [data-testid="stFormSubmitButton"] > div > button {
@@ -3610,6 +3620,7 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
 
         # ★ LAZY LOAD: โหลด Parquet เฉพาะเมื่อได้ใช้งานจริง (ประหยัด RAM ~150MB ต่อ rerun)
         _TABS_NEED_ACTIVE_DB = {
+            "🏠 สรุปสถานการณ์ (Overview)",  # ★ FIX: Heatmap/Clock ใน Overview ต้องใช้ active_db
             "🚨 รถสวมทะเบียน",
             "🚘 ขบวนรถลำเลียง",
             "🔄 พฤติกรรมมุดชายแดน",
