@@ -788,14 +788,21 @@ _dark_css = """    /* ═══ DARK MODE ═══ */
     .stTextInput input { background: rgba(15,23,42,0.8) !important; border: 1px solid rgba(59,130,246,0.2) !important; border-radius: 8px !important; color: #e2e8f0 !important; }
     .stButton > button { background: linear-gradient(135deg, rgba(29,78,216,0.3), rgba(99,102,241,0.3)) !important; border: 1px solid rgba(59,130,246,0.3) !important; color: #93c5fd !important; border-radius: 8px !important; font-weight: 600 !important; font-size: 13px !important; transition: all 0.2s ease !important; }
     .stButton > button:hover { background: linear-gradient(135deg, rgba(29,78,216,0.5), rgba(99,102,241,0.5)) !important; color: #dbeafe !important; box-shadow: 0 4px 16px rgba(59,130,246,0.2) !important; transform: translateY(-1px); }
-    /* ปุ่มที่ไม่มี use_container_width (ไม่มี inline style width) → pill เล็ก กึ่งกลาง */
-    :not([data-testid="stSidebar"]) .stButton > button:not([style]) {
-        width: fit-content !important; min-width: 80px !important;
+    /* ปุ่ม pill เล็กกึ่งกลาง — ทุกปุ่มนอก sidebar + นอก form */
+    :not([data-testid="stSidebar"]) .stButton > button {
+        width: fit-content !important; min-width: 80px !important; max-width: 160px !important;
         padding: 5px 18px !important; font-size: 12px !important;
         border-radius: 20px !important; display: block !important; margin: 0 auto !important;
     }
-    :not([data-testid="stSidebar"]) .stButton:has(> button:not([style])) {
+    :not([data-testid="stSidebar"]) .stButton {
         display: flex !important; justify-content: center !important;
+    }
+    /* Form submit buttons ต้อง full-width (เช่นปุ่ม ✅ ยืนยัน) */
+    [data-testid="stFormSubmitButton"] button,
+    [data-testid="stFormSubmitButton"] > div > button {
+        width: 100% !important; max-width: 100% !important;
+        padding: 8px 16px !important; font-size: 13px !important;
+        border-radius: 8px !important;
     }
     [data-testid="stAlert"] { background: rgba(15,23,42,0.7) !important; border-radius: 10px !important; border: 1px solid rgba(59,130,246,0.2) !important; color: #94a3b8 !important; }
     [data-testid="stFileUploader"] { background: rgba(15,23,42,0.6) !important; border: 2px dashed rgba(59,130,246,0.25) !important; border-radius: 12px !important; }
