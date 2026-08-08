@@ -800,7 +800,7 @@ _dark_css = """    /* ═══ DARK MODE ═══ */
         font-size: 11px !important; line-height: 1.3 !important; margin: 0 !important; padding: 0 !important;
     }
     :not([data-testid="stSidebar"]) .stButton {
-        display: flex !important; justify-content: center !important;
+        width: 100% !important; display: flex !important;
     }
     /* Form submit buttons ต้อง full-width (เช่นปุ่ม ✅ ยืนยัน) */
     [data-testid="stFormSubmitButton"] button,
@@ -910,7 +910,7 @@ _light_css = """    /* ═══ LIGHT MODE ═══ */
         font-size: 11px !important; line-height: 1.3 !important; margin: 0 !important; padding: 0 !important;
     }
     :not([data-testid="stSidebar"]) .stButton {
-        display: flex !important; justify-content: center !important;
+        width: 100% !important; display: flex !important;
     }
     [data-testid="stFormSubmitButton"] button,
     [data-testid="stFormSubmitButton"] > div > button {
@@ -1656,7 +1656,7 @@ def run_intelligence_orchestrator(active_db_pl,
         _OCR_CONFUSION = [
             ('ย', 'บ'), ('ย', 'ข'), ('ย', 'ษ'), ('บ', 'ข'), ('บ', 'ษ'),
             ('ค', 'ด'), ('ค', 'ต'), ('ด', 'ต'),
-            ('ว', 'ว'), ('ล', 'า'),
+            ('ว', 'น'), ('ล', 'า'),  # ★ FIX: ('ว','ว') self-pair → ('ว','น') OCR confusion ที่ถูกต้อง
         ]
         _all_plates_today = set(active_db['ทะเบียน_Full'].unique())
 
@@ -1671,20 +1671,17 @@ def run_intelligence_orchestrator(active_db_pl,
                 score += 40
 
             # Filter 2: คู่อักษรสับสน — ตรวจว่ามีทะเบียนคู่แฝดในข้อมูลวันเดียวกัน (+30)
-            _prefix = ''.join(c for c in plate if '\u0e00' <= c <= '\u0e7f')  # ตัวอักษรไทยใน prefix
-            _suffix = ''.join(c for c in plate if c.isdigit())
-            _province = plate.split()[-1] if ' ' in plate else ''
+            _prefix = ''.join(c for c in plate if '\u0e00' <= c <= '\u0e7f')
             for (a, b) in _OCR_CONFUSION:
+                if a == b: continue  # ★ FIX: skip self-pair
                 if a in _prefix:
                     _alt = plate.replace(a, b, 1)
-                    if _alt in _all_plates_today:
-                        score += 30
-                        break
+                    if _alt != plate and _alt in _all_plates_today:
+                        score += 30; break
                 if b in _prefix:
                     _alt = plate.replace(b, a, 1)
-                    if _alt in _all_plates_today:
-                        score += 30
-                        break
+                    if _alt != plate and _alt in _all_plates_today:
+                        score += 30; break
 
             # Filter 3: Time-Drift — ระยะ > 50 กม. แต่เวลาต่างกัน < 180 วินาที (+15)
             _sorted_t = df_target.sort_values('Datetime')
@@ -1713,7 +1710,8 @@ def run_intelligence_orchestrator(active_db_pl,
         # ── โหลด historical baseline (30 วันย้อนหลัง) สำหรับ Filter 6 ─────────────
         try:
             _hist_conn = sqlite3.connect(DB_PATH)
-            _hist_sql  = "SELECT plate FROM daily_reports_v2 WHERE report_date < date('now') AND report_date >= date('now', '-30 days') GROUP BY plate"
+            # ★ FIX: ใช้ daily_reports (ไม่ใช่ _v2 ที่ไม่มีใน DB)
+            _hist_sql  = "SELECT plate FROM daily_reports WHERE report_date < date('now') AND report_date >= date('now', '-30 days') GROUP BY plate"
             _hist_df   = pd.read_sql(_hist_sql, _hist_conn)
             _hist_conn.close()
             _known_plates_30d = set(_hist_df['plate'].tolist()) if not _hist_df.empty else set()
@@ -1728,6 +1726,8 @@ def run_intelligence_orchestrator(active_db_pl,
                 return ocr_score + 10  # ไม่เคยเห็นมาก่อน = น่าจะ OCR error
             return ocr_score           # มีประวัติ = อาจเป็นสวมทะเบียนจริง
 
+        # ★ FIX: reset _e1_confirmed_plates ก่อน loop — เฉพาะทะเบียนที่ผ่าน OCR filter แล้ว จึงถูก E3/E4 exclude
+        _e1_confirmed_plates = set()
         for plate in e1_plates:
             df_target = active_db[active_db['ทะเบียน_Full'] == plate].sort_values('Datetime')
             if df_target.empty: continue
@@ -1757,8 +1757,10 @@ def run_intelligence_orchestrator(active_db_pl,
             engine_results[plate]["cars"].add(plate)
             engine_results[plate]["radar"]      = {"Night": r_night, "Border": 30, "Shuttle": 0, "Regional": 0, "Convoy": 0}
             engine_results[plate]["speed_warp"] = f"{max_speed:.0f}"
+            _e1_confirmed_plates.add(plate)  # ★ เพิ่มเฉพาะที่ยืนยันแล้ว → E3/E4 ถึง exclude ได้ถูกต้อง
     else:
         e1_plates = []
+        _e1_confirmed_plates = set()
 
 
     # ----------------------------------------
@@ -1971,7 +1973,7 @@ def run_intelligence_orchestrator(active_db_pl,
         
         # ★ PERF: Pre-compute all filter criteria with groupby ONCE (ลด loop จาก 187k → ~ร้อยทะเบียน)
         _e3_sub = active_db[active_db['ทะเบียน_Full'].isin(e3_candidates_raw) &
-                             ~active_db['ทะเบียน_Full'].isin(e1_plates)]
+                             ~active_db['ทะเบียน_Full'].isin(_e1_confirmed_plates)]  # ★ FIX: ใช้ confirmed ไม่ใช่ e1_plates ทั้งหมด
         if not _e3_sub.empty:
             _e3_g = _e3_sub.groupby('ทะเบียน_Full', sort=False)
             # ★ PERF: .agg() เร็วกว่า .apply() สำหรับ group aggregations
@@ -2134,7 +2136,7 @@ def run_intelligence_orchestrator(active_db_pl,
             _e4_candidates = _e4_night_counts.index
 
             for plate in _e4_candidates:
-                if plate in e1_plates: continue
+                if plate in _e1_confirmed_plates: continue  # ★ FIX: ใช้ confirmed ไม่ใช่ e1_plates
                 # Fix 4a: E4 ไม่ซ้ำกับ E3 (Europol standard: ไม่นับซ้ำรถที่มี U-turn แล้ว)
                 if "E3" in engine_results.get(plate, {}).get("engines", set()): continue
 
@@ -2675,8 +2677,12 @@ def _build_tactical_map_html(lat_mean: float, lon_mean: float,
         if(tr.coords.length>1)
           L.polyline(tr.coords,{{color:tr.color,weight:4,dashArray:dash}}).bindTooltip(tr.car).addTo(map);
         tr.coords.forEach(function(pt,i){{
-          L.circleMarker(pt,{{radius:tr.is_lead?9:7,color:tr.color,fillColor:tr.color,fillOpacity:0.9}})
-            .bindPopup(tr.popups[i]).addTo(map);
+          var icon = L.divIcon({{
+            className:'',
+            html:'<div style="width:22px;height:22px;border-radius:50%;background:'+tr.color+';border:2px solid #fff;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#fff;box-shadow:0 1px 4px rgba(0,0,0,0.4);">'+(i+1)+'</div>',
+            iconSize:[22,22],iconAnchor:[11,11]
+          }});
+          L.marker(pt,{{icon:icon}}).bindPopup(tr.popups[i]).addTo(map);
         }});
       }});
     </script>"""
@@ -4004,8 +4010,22 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
                 _show_map   = st.toggle("🗺️ แสดงแผนที่ประเมินความเสี่ยงทางยุทธวิธี (2D Risk Hotspots & Heatmap)", value=False, key="tog_map_ov")
                 if _show_map:
                     st.markdown("### 🗺️ แผนที่ประเมินความเสี่ยงทางยุทธวิธี (2D Risk Hotspots & Heatmap)")
-                    map_stats = metrics.get('map_stats', [])
-                    # ── Leaflet.js + Leaflet.heat แทน Folium HeatMap (RAM ลดมาก) ─
+                    # ★ FIX: Heatmap — ใช้ metrics ก่อน ถ้าว่างคำนวณตรงจาก active_db
+                    if metrics and 'map_stats' in metrics and metrics['map_stats']:
+                        map_stats = metrics['map_stats']
+                    else:
+                        import math as _math
+                        _targeted = set(c for cars in priority_df['Cars_List'] for c in cars) if not priority_df.empty else set()
+                        _tgt_db   = active_db[active_db['ทะเบียน_Full'].isin(_targeted)] if (_targeted and not active_db.empty) else pd.DataFrame()
+                        if not _tgt_db.empty and 'ละติจูด' in _tgt_db.columns:
+                            _cs = (_tgt_db.dropna(subset=['ละติจูด','ลองจิจูด'])
+                                   .groupby('จุดติดตั้งกล้อง')
+                                   .agg(lat=('ละติจูด','first'), lon=('ลองจิจูด','first'),
+                                        volume=('ทะเบียน_Full','nunique')).reset_index())
+                            _cs = _cs[_cs['lat'].apply(lambda x: not _math.isnan(x))]
+                            map_stats = _cs.to_dict('records')
+                        else:
+                            map_stats = []
                     import json as _json
                     _heat_pts = [[r['lat'], r['lon'], min(r['volume'], 30)] for r in map_stats]
                     _mkr_list = []
@@ -4038,8 +4058,32 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
                 _show_clock = st.toggle("🕒 แสดงนาฬิกาประเมินสถานการณ์เชิงยุทธวิธี (Advanced Tactical Crime Clock)", value=False, key="tog_clock_ov")
                 if _show_clock:
                     st.markdown("### 🕒 นาฬิกาประเมินสถานการณ์เชิงยุทธวิธี (Advanced Tactical Crime Clock)")
-                    clock_data = metrics.get('clock', {})
-                    tactical_data = metrics.get('tactical', {})
+                    if metrics and 'clock' in metrics and metrics['clock']:
+                        clock_data    = metrics.get('clock', {})
+                        tactical_data = metrics.get('tactical', {})
+                    else:
+                        # ★ FIX: คำนวณตรงจาก active_db เมื่อ metrics ว่าง
+                        if not active_db.empty and 'Datetime' in active_db.columns:
+                            _adb = active_db.copy()
+                            _adb['Hour'] = pd.to_datetime(_adb['Datetime']).dt.hour
+                            _targeted2 = set(c for cars in priority_df['Cars_List'] for c in cars) if not priority_df.empty else set()
+                            _tgt2 = _adb[_adb['ทะเบียน_Full'].isin(_targeted2)] if _targeted2 else pd.DataFrame()
+                            _hrs = list(range(24))
+                            _tot = _adb.groupby('Hour')['ทะเบียน_Full'].nunique().reindex(_hrs, fill_value=0)
+                            _p2t = {c: r['ประเภท'] for _, r in priority_df.iterrows() for c in r['Cars_List']} if not priority_df.empty else {}
+                            if not _tgt2.empty:
+                                _tgt2 = _tgt2.copy(); _tgt2['Threat_Type'] = _tgt2['ทะเบียน_Full'].map(_p2t)
+                                def _hr(t): return _tgt2[_tgt2['Threat_Type']==t].groupby('Hour')['ทะเบียน_Full'].nunique().reindex(_hrs,fill_value=0).tolist()
+                                clock_data = {'total_hourly':_tot.tolist(),'apex_hr':_hr('กลุ่มเป้าหมายความมั่นคงระดับสูงสุด'),
+                                              'cloned_hr':_hr('กลุ่มเป้าหมายสวมทะเบียน'),'convoy_hr':_hr('กลุ่มรถยนต์เคลื่อนที่แบบขบวน'),'border_hr':_hr('กลุ่มรถต้องสงสัย')}
+                                _tgt_tot = _tgt2.groupby('Hour')['ทะเบียน_Full'].nunique().reindex(_hrs,fill_value=0)
+                                _pk = int(_tgt_tot.idxmax()) if _tgt_tot.max()>0 else 0
+                                tactical_data = {'peak_hr':_pk,'peak_cam':_tgt2[_tgt2['Hour']==_pk]['จุดติดตั้งกล้อง'].mode()[0] if not _tgt2[_tgt2['Hour']==_pk].empty else '-','main_threat':_tgt2['Threat_Type'].mode()[0] if not _tgt2.empty else '-','max_risk_ratio':float((_tgt_tot/(_tot.replace(0,1))*100).max())}
+                            else:
+                                clock_data = {'total_hourly':_tot.tolist(),'apex_hr':[0]*24,'cloned_hr':[0]*24,'convoy_hr':[0]*24,'border_hr':[0]*24}
+                                tactical_data = {}
+                        else:
+                            clock_data = {}; tactical_data = {}
                     
                     if clock_data:
                         hours = list(range(24))
