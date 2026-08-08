@@ -3702,7 +3702,29 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
                 if _show_map:
                     st.markdown("### 🗺️ แผนที่ประเมินความเสี่ยงทางยุทธวิธี (2D Risk Hotspots & Heatmap)")
                     m_agg = folium.Map(location=[15.0, 102.0], zoom_start=6) 
-                    map_stats = metrics.get('map_stats', [])
+                    # ★ FIX: Heatmap — ใช้ metrics ก่อน ถ้าว่างคำนวณตรงจาก active_db
+                    if metrics and 'map_stats' in metrics and metrics['map_stats']:
+                        map_stats = metrics['map_stats']
+                    else:
+                        import math as _math
+                        _targeted = set(c for cars in priority_df['Cars_List'] for c in cars) if not priority_df.empty else set()
+                        _tgt_db = active_db[active_db['ทะเบียน_Full'].isin(_targeted)] if (_targeted and not active_db.empty) else pd.DataFrame()
+                        _p2threat = {}
+                        if not priority_df.empty:
+                            for _, _row in priority_df.iterrows():
+                                for _car in _row.get('Cars_List', []):
+                                    _p2threat[_car] = _row.get('ประเภท', '')
+                        if not _tgt_db.empty and 'ละติจูด' in _tgt_db.columns:
+                            _tgt_db2 = _tgt_db.dropna(subset=['ละติจูด','ลองจิจูด']).copy()
+                            _tgt_db2['_threat'] = _tgt_db2['ทะเบียน_Full'].map(_p2threat).fillna('')
+                            _cs = (_tgt_db2.groupby('จุดติดตั้งกล้อง')
+                                   .agg(lat=('ละติจูด','first'), lon=('ลองจิจูด','first'),
+                                        volume=('ทะเบียน_Full','nunique'),
+                                        primary_threat=('_threat', lambda x: x.mode().iloc[0] if len(x.mode()) > 0 else '')).reset_index())
+                            _cs = _cs[_cs['lat'].apply(lambda x: not _math.isnan(x))]
+                            map_stats = _cs.to_dict('records')
+                        else:
+                            map_stats = []
                     if map_stats:
                         heat_data = [[row['lat'], row['lon'], row['volume']] for row in map_stats]
                         HeatMap(heat_data, radius=25, blur=15, min_opacity=0.4).add_to(m_agg)
@@ -3739,8 +3761,32 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
                 _show_clock = st.toggle("🕒 แสดงนาฬิกาประเมินสถานการณ์เชิงยุทธวิธี (Advanced Tactical Crime Clock)", value=False, key="tog_clock_ov")
                 if _show_clock:
                     st.markdown("### 🕒 นาฬิกาประเมินสถานการณ์เชิงยุทธวิธี (Advanced Tactical Crime Clock)")
-                    clock_data = metrics.get('clock', {})
-                    tactical_data = metrics.get('tactical', {})
+                    if metrics and 'clock' in metrics and metrics['clock']:
+                        clock_data    = metrics.get('clock', {})
+                        tactical_data = metrics.get('tactical', {})
+                    else:
+                        # ★ FIX: คำนวณตรงจาก active_db เมื่อ metrics ว่าง
+                        if not active_db.empty and 'Datetime' in active_db.columns:
+                            _adb = active_db.copy()
+                            _adb['Hour'] = pd.to_datetime(_adb['Datetime']).dt.hour
+                            _targeted2 = set(c for cars in priority_df['Cars_List'] for c in cars) if not priority_df.empty else set()
+                            _tgt2 = _adb[_adb['ทะเบียน_Full'].isin(_targeted2)] if _targeted2 else pd.DataFrame()
+                            _hrs = list(range(24))
+                            _tot = _adb.groupby('Hour')['ทะเบียน_Full'].nunique().reindex(_hrs, fill_value=0)
+                            _p2t = {c: r['ประเภท'] for _, r in priority_df.iterrows() for c in r['Cars_List']} if not priority_df.empty else {}
+                            if not _tgt2.empty:
+                                _tgt2 = _tgt2.copy(); _tgt2['Threat_Type'] = _tgt2['ทะเบียน_Full'].map(_p2t)
+                                def _hr(t): return _tgt2[_tgt2['Threat_Type']==t].groupby('Hour')['ทะเบียน_Full'].nunique().reindex(_hrs,fill_value=0).tolist()
+                                clock_data = {'total_hourly':_tot.tolist(),'apex_hr':_hr('กลุ่มเป้าหมายความมั่นคงระดับสูงสุด'),
+                                              'cloned_hr':_hr('กลุ่มเป้าหมายสวมทะเบียน'),'convoy_hr':_hr('กลุ่มรถยนต์เคลื่อนที่แบบขบวน'),'border_hr':_hr('กลุ่มรถต้องสงสัย')}
+                                _tgt_tot = _tgt2.groupby('Hour')['ทะเบียน_Full'].nunique().reindex(_hrs,fill_value=0)
+                                _pk = int(_tgt_tot.idxmax()) if _tgt_tot.max()>0 else 0
+                                tactical_data = {'peak_hr':_pk,'peak_cam':_tgt2[_tgt2['Hour']==_pk]['จุดติดตั้งกล้อง'].mode()[0] if not _tgt2[_tgt2['Hour']==_pk].empty else '-','main_threat':_tgt2['Threat_Type'].mode()[0] if not _tgt2.empty else '-','max_risk_ratio':float((_tgt_tot/(_tot.replace(0,1))*100).max())}
+                            else:
+                                clock_data = {'total_hourly':_tot.tolist(),'apex_hr':[0]*24,'cloned_hr':[0]*24,'convoy_hr':[0]*24,'border_hr':[0]*24}
+                                tactical_data = {}
+                        else:
+                            clock_data = {}; tactical_data = {}
                     
                     if clock_data:
                         hours = list(range(24))
