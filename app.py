@@ -2612,8 +2612,8 @@ def render_case_dossier(selected_target, active_db, priority_df):
                     _ghost_coords.append((_r.ละติจูด, _r.ลองจิจูด, _r.เวลา, _r.จุดติดตั้งกล้อง, _spd))
                 else:
                     _normal_coords.append((_r.ละติจูด, _r.ลองจิจูด, _r.เวลา, _r.จุดติดตั้งกล้อง))
-            _lat_m = case_data['ละติจูด'].mean()
-            _lon_m = case_data['ลองจิจูด'].mean()
+            _lat_m = case_data['ละติจูด'].dropna().mean()
+            _lon_m = case_data['ลองจิจูด'].dropna().mean()
             with st.spinner('🗺️ โหลดแผนที่...'):
                 _map_html = _build_clone_map_html(
                     _lat_m, _lon_m,
@@ -2721,10 +2721,11 @@ def render_case_dossier(selected_target, active_db, priority_df):
                 dt_str = cam_data.iloc[0]['Datetime'].strftime('%Y/%m/%d')
                 num_cars = len(cam_data)
                 
-                lead_plate = cam_data.iloc[0]['ทะเบียน_Full']
-                
+                # ★ รถนำ = เวลาที่เร็วที่สุด (Datetime น้อยที่สุด = ถึงก่อน)
+                lead_plate = cam_data.sort_values('Datetime').iloc[0]['ทะเบียน_Full']
+
                 # ★ PERF: vectorized — แทน iterrows
-                plates = cam_data['ทะเบียน_Full'].tolist()
+                plates = cam_data.sort_values('Datetime')['ทะเบียน_Full'].tolist()
                 roles  = ['รถนำ(Scout)' if p == lead_plate else 'รถตาม' for p in plates]
                 times  = cam_data['Datetime'].dt.strftime('%H:%M:%S').tolist()
                 speeds = [f"{s:.0f}" if pd.notna(s) and s > 0 else "-" for s in cam_data['Speed_kmh']]
@@ -2770,10 +2771,11 @@ def render_case_dossier(selected_target, active_db, priority_df):
         icon_str = "🚚" if "บรร取ุก" in str(c_df.iloc[0]['ประเภทรถ']) or "บรรทุก" in str(c_df.iloc[0]['ประเภทรถ']) else "🚗"
         
         if is_convoy:
-            if idx == 0:
+            # รถนำ = cars[0] ซึ่งถูก sort ให้ lead_car อยู่ index 0 แล้วจาก orchestrator
+            if c == cars[0]:
                 line_color, car_name = '#dc2626', f"🔴 รถนำ: {c}"
             else:
-                line_color, car_name = cool_colors[(idx-1) % len(cool_colors)], f"🚙 รถตาม: {c}"
+                line_color, car_name = cool_colors[(cars.index(c)-1) % len(cool_colors)], f"🚙 รถตาม: {c}"
         elif is_clone:
             line_color, car_name = '#10b981', f"รถจริง: {c}"
         else:
