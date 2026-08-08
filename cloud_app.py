@@ -4028,11 +4028,19 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
                         import math as _math
                         _targeted = set(c for cars in priority_df['Cars_List'] for c in cars) if not priority_df.empty else set()
                         _tgt_db   = active_db[active_db['ทะเบียน_Full'].isin(_targeted)] if (_targeted and not active_db.empty) else pd.DataFrame()
+                        # ★ FIX: สร้าง plate → threat type mapping
+                        _p2threat = {}
+                        if not priority_df.empty:
+                            for _, _row in priority_df.iterrows():
+                                for _car in _row.get('Cars_List', []):
+                                    _p2threat[_car] = _row.get('ประเภท', '')
                         if not _tgt_db.empty and 'ละติจูด' in _tgt_db.columns:
-                            _cs = (_tgt_db.dropna(subset=['ละติจูด','ลองจิจูด'])
-                                   .groupby('จุดติดตั้งกล้อง')
+                            _tgt_db2 = _tgt_db.dropna(subset=['ละติจูด','ลองจิจูด']).copy()
+                            _tgt_db2['_threat'] = _tgt_db2['ทะเบียน_Full'].map(_p2threat).fillna('')
+                            _cs = (_tgt_db2.groupby('จุดติดตั้งกล้อง')
                                    .agg(lat=('ละติจูด','first'), lon=('ลองจิจูด','first'),
-                                        volume=('ทะเบียน_Full','nunique')).reset_index())
+                                        volume=('ทะเบียน_Full','nunique'),
+                                        primary_threat=('_threat', lambda x: x.mode().iloc[0] if len(x.mode()) > 0 else '')).reset_index())
                             _cs = _cs[_cs['lat'].apply(lambda x: not _math.isnan(x))]
                             map_stats = _cs.to_dict('records')
                         else:
@@ -4063,7 +4071,7 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
                     <div style="margin-top:6px;font-size:12px;color:#aaa">
                       🟠 สวมทะเบียน &nbsp; 🔵 ขบวนรถ &nbsp; 🟣 รถต้องสงสัย
                     </div>"""
-                    st.components.v1.html(_lf_agg, height=460)
+                    st.components.v1.html(_lf_agg, height=490)
                     st.markdown("---")
 
                 _show_clock = st.toggle("🕒 แสดงนาฬิกาประเมินสถานการณ์เชิงยุทธวิธี (Advanced Tactical Crime Clock)", value=False, key="tog_clock_ov")
