@@ -2443,46 +2443,71 @@ def run_realtime_intelligence(active_db_pl):
 def _build_clone_map_html(lat_mean: float, lon_mean: float,
                            normal_coords: tuple, ghost_coords: tuple,
                            show_real: bool = True, show_fake: bool = True) -> str:
-    """Build ghost/clone map HTML — cached per unique coord set."""
-    m = folium.Map(location=[lat_mean, lon_mean], zoom_start=9)
-    if show_real:
-        for lat, lon, tm, cam in normal_coords:
-            folium.Marker(location=(lat, lon), popup=f"{tm} - {cam}",
-                          icon=folium.Icon(color='blue', icon='car', prefix='fa')).add_to(m)
-        if len(normal_coords) > 1:
-            plugins.AntPath([(lat, lon) for lat, lon, _, _ in normal_coords],
-                            color='blue', weight=4).add_to(m)
-    if show_fake:
-        for lat, lon, tm, cam, spd in ghost_coords:
-            popup_html = (f"<b>🚨 พิกัดผิดปกติ (คาดว่ารถสวมทะเบียน)</b>"
-                          f"<br>เวลา: {tm}<br>จุดตรวจ: {cam}"
-                          f"<br>ความเร็วประเมิน: {spd:.0f} กม./ชม.")
-            folium.Marker(location=(lat, lon), popup=popup_html,
-                          icon=folium.Icon(color='red', icon='warning-sign')).add_to(m)
-    return m.get_root().render()
+    """Build ghost/clone map HTML via Leaflet.js — cached per unique coord set."""
+    import json as _json, math
+    if math.isnan(lat_mean) or math.isnan(lon_mean):
+        return "<p>ℹ️ ไม่มีพิกัด GPS</p>"
+    _real = [{'lat': lat, 'lon': lon, 'popup': f"{tm}<br>{cam}"}
+             for lat, lon, tm, cam in normal_coords] if show_real else []
+    _fake = [{'lat': lat, 'lon': lon,
+              'popup': f"🚨 รถสวมทะเบียน<br>{tm}<br>{cam}<br>ความเร็ว: {spd:.0f} กม./ชม."}
+             for lat, lon, tm, cam, spd in ghost_coords] if show_fake else []
+    _real_line = [[lat, lon] for lat, lon, _, _ in normal_coords] if (show_real and len(normal_coords) > 1) else []
+    return f"""
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <div id="lf_clone" style="height:440px;border-radius:10px;"></div>
+    <script>
+      var map = L.map('lf_clone').setView([{lat_mean:.5f},{lon_mean:.5f}],9);
+      L.tileLayer('https://{{s}}.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png',{{attribution:'OSM'}}).addTo(map);
+      {_json.dumps(_real)}.forEach(function(m){{
+        L.circleMarker([m.lat,m.lon],{{radius:8,color:'#1e40af',fillColor:'#3b82f6',fillOpacity:0.85}})
+          .bindPopup(m.popup).addTo(map);
+      }});
+      if({_json.dumps(_real_line)}.length>1)
+        L.polyline({_json.dumps(_real_line)},{{color:'#1e40af',weight:4,dashArray:'8,4'}}).addTo(map);
+      {_json.dumps(_fake)}.forEach(function(m){{
+        L.marker([m.lat,m.lon],{{icon:L.divIcon({{html:'<div style="font-size:20px">🚨</div>',iconAnchor:[10,10]}})}}
+          ).bindPopup(m.popup).addTo(map);
+      }});
+    </script>"""
 
 
 @st.cache_data(ttl=600, show_spinner=False)
 def _build_tactical_map_html(lat_mean: float, lon_mean: float,
                               car_tracks: tuple, is_convoy: bool) -> str:
-    """Build tactical track map HTML — cached per unique car/coord combination."""
-    m = folium.Map(location=[lat_mean, lon_mean], zoom_start=9)
-    hex_pastel  = ['#9f1239', '#1e3a8a', '#047857', '#4338ca', '#b45309', '#be123c'] * 5
-    cool_colors = ['#1e3a8a', '#0369a1', '#047857', '#4338ca', '#334155', '#0f766e']
+    """Build tactical track map HTML via Leaflet.js — cached per unique car/coord combination."""
+    import json as _json, math
+    if math.isnan(lat_mean) or math.isnan(lon_mean):
+        return "<p>ℹ️ ไม่มีพิกัด GPS ในข้อมูลนี้</p>"
+    cool_colors = ['#dc2626','#1e40af','#047857','#4338ca','#b45309','#be123c'] * 5
+    _tracks_js = []
     for idx, (car, coords, times, cams) in enumerate(car_tracks):
-        if is_convoy:
-            f_color = 'red'  if idx == 0 else 'blue'
-            h_color = '#dc2626' if idx == 0 else cool_colors[(idx - 1) % len(cool_colors)]
-        else:
-            f_color, h_color = 'blue', hex_pastel[idx % len(hex_pastel)]
-        for (lat, lon), tm, cam in zip(coords, times, cams):
-            folium.Marker(location=(lat, lon),
-                          popup=f"<b>{car}</b><br>{tm} - {cam}",
-                          icon=folium.Icon(color=f_color, icon='car', prefix='fa')).add_to(m)
-        if len(coords) > 1:
-            plugins.AntPath(coords, color=h_color, weight=4,
-                            dash_array=([10, 20] if is_convoy else [0])).add_to(m)
-    return m.get_root().render()
+        color = cool_colors[idx % len(cool_colors)]
+        label = f"🔴 รถนำ: {car}" if (is_convoy and idx == 0) else f"🚙 รถตาม: {car}" if is_convoy else car
+        # กรอง NaN coords ออก
+        _clean = [(lat, lon) for lat, lon in coords if not (math.isnan(lat) or math.isnan(lon))]
+        _tracks_js.append({'car': label, 'coords': _clean,
+                           'color': color, 'is_lead': (is_convoy and idx == 0),
+                           'popups': [f"<b>{car}</b><br>{t}<br>{c}" for t, c in zip(times, cams)]})
+    return f"""
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <div id="lf_tact" style="height:440px;border-radius:10px;"></div>
+    <script>
+      var map = L.map('lf_tact').setView([{lat_mean:.5f},{lon_mean:.5f}],9);
+      L.tileLayer('https://{{s}}.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png',{{attribution:'OSM'}}).addTo(map);
+      var tracks = {_json.dumps(_tracks_js)};
+      tracks.forEach(function(tr){{
+        var dash = tr.is_lead ? '0' : '8,6';
+        if(tr.coords.length>1)
+          L.polyline(tr.coords,{{color:tr.color,weight:4,dashArray:dash}}).bindTooltip(tr.car).addTo(map);
+        tr.coords.forEach(function(pt,i){{
+          L.circleMarker(pt,{{radius:tr.is_lead?9:7,color:tr.color,fillColor:tr.color,fillOpacity:0.9}})
+            .bindPopup(tr.popups[i]).addTo(map);
+        }});
+      }});
+    </script>"""
 
 
 def render_case_dossier(selected_target, active_db, priority_df):
@@ -2677,8 +2702,8 @@ def render_case_dossier(selected_target, active_db, priority_df):
             _times  = tuple(str(_r.เวลา)     for _r in _cd.itertuples())
             _cams   = tuple(str(_r.จุดติดตั้งกล้อง) for _r in _cd.itertuples())
             _car_tracks.append((_c, _coords, _times, _cams))
-        _lat_m = case_data['ละติจูด'].mean()
-        _lon_m = case_data['ลองจิจูด'].mean()
+        _lat_m = case_data['ละติจูด'].dropna().mean()
+        _lon_m = case_data['ลองจิจูด'].dropna().mean()
         with st.spinner('🗺️ โหลดแผนที่...'):
             _map_html = _build_tactical_map_html(
                 _lat_m, _lon_m, tuple(_car_tracks), is_convoy

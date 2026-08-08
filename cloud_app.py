@@ -3696,7 +3696,7 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
         cat_convoy_car = 0
         cat_others   = 0
 
-        if not filtered_df.empty and metrics:
+        if not filtered_df.empty:  # ★ ผ่าน metrics ออก — metrics อาจว่างใน lazy mode แต่ตารางยังต้องแสดง
             
             cat_cloned = len(filtered_df[filtered_df['ประเภท'] == "กลุ่มเป้าหมายสวมทะเบียน"])
             cat_convoy_car = len(filtered_df[filtered_df['ประเภท'] == "กลุ่มรถยนต์เคลื่อนที่แบบขบวน"])
