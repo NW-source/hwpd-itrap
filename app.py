@@ -2527,6 +2527,14 @@ def render_case_dossier(selected_target, active_db, priority_df):
     is_clone = "สวมทะเบียน" in target_info['ประเภท']
     is_convoy = "ขบวน" in target_info['ประเภท']
     is_anomaly = "ผิดปกติ" in target_info['ประเภท']
+
+    # ★ FIX: รถนำ = รถที่ถึงจุดแรกเร็วที่สุด — re-sort cars list เพื่อให้ cars[0] เป็นรถนำเสมอ
+    if is_convoy and not case_data.empty and len(cars) > 1:
+        _first_arrival = (
+            case_data.groupby('ทะเบียน_Full')['Datetime'].min()
+            .sort_values()
+        )
+        cars = _first_arrival.index.tolist()
     
     total_dist_km = 0.0
     total_time_hr = 0.0

@@ -2668,6 +2668,14 @@ def render_case_dossier(selected_target, active_db, priority_df):
     is_clone = "สวมทะเบียน" in target_info['ประเภท']
     is_convoy = "ขบวน" in target_info['ประเภท']
     is_anomaly = "ผิดปกติ" in target_info['ประเภท']
+
+    # ★ FIX: รถนำ = รถที่ถึงจุดแรกเร็วที่สุด — re-sort cars list เพื่อให้ cars[0] เป็นรถนำเสมอ
+    if is_convoy and not case_data.empty and len(cars) > 1:
+        _first_arrival = (
+            case_data.groupby('ทะเบียน_Full')['Datetime'].min()
+            .sort_values()
+        )
+        cars = _first_arrival.index.tolist()
     
     total_dist_km = 0.0
     total_time_hr = 0.0
@@ -3825,16 +3833,16 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
                         st.markdown(f"<div class='metric-card card-apex'><div class='metric-label'>🚨 ระดับสูงสุด</div><div class='metric-value'>{len(apex_df)}</div></div>", unsafe_allow_html=True)
                     with col2:
                         st.markdown(f"<div class='metric-card card-clone'><div class='metric-label'>🚗 สวมทะเบียน</div><div class='metric-value'>{cat_cloned}</div></div>", unsafe_allow_html=True)
-                        if st.button("📊 ดูข้อมูล", key="btn_clone_d", type="primary"): change_tab("🚨 รถสวมทะเบียน"); st.rerun()
+                        if st.button("📊 ดูข้อมูล", key="btn_clone_d"): change_tab("🚨 รถสวมทะเบียน"); st.rerun()
                     with col3:
                         st.markdown(f"<div class='metric-card card-car'><div class='metric-label'>🏎️ ขบวนรถยนต์</div><div class='metric-value'>{cat_convoy_car}</div></div>", unsafe_allow_html=True)
-                        if st.button("📊 ดูข้อมูล", key="btn_car_d", type="primary"): change_tab("🚘 ขบวนรถลำเลียง"); st.rerun()
+                        if st.button("📊 ดูข้อมูล", key="btn_car_d"): change_tab("🚘 ขบวนรถลำเลียง"); st.rerun()
                     with col4:
                         st.markdown(f"<div class='metric-card card-anomaly'><div class='metric-label'>🔄 รถต้องสงสัย</div><div class='metric-value'>{cat_others}</div></div>", unsafe_allow_html=True)
-                        if st.button("📊 ดูข้อมูล", key="btn_anomaly_d", type="primary"): change_tab("🔄 พฤติกรรมมุดชายแดน"); st.rerun()
+                        if st.button("📊 ดูข้อมูล", key="btn_anomaly_d"): change_tab("🔄 พฤติกรรมมุดชายแดน"); st.rerun()
                     with col5:
                         st.markdown(f"<div class='metric-card card-watch'><div class='metric-label'>⭐ Watch List วันนี้</div><div class='metric-value'>{_watch_today}</div></div>", unsafe_allow_html=True)
-                        if st.button("📊 ดูข้อมูล", key="btn_watch_d", type="primary"): change_tab("⭐ รถที่น่าสนใจ"); st.rerun()
+                        if st.button("📊 ดูข้อมูล", key="btn_watch_d"): change_tab("⭐ รถที่น่าสนใจ"); st.rerun()
 
 
                 with tab_repeat:
