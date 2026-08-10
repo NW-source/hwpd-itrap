@@ -3536,6 +3536,7 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
 
     if not available_dates or available_dates == [_cloud_today]:
         selected_date = _cloud_today
+        idx = 0  # ★ FIX: ต้อง define ก่อน ไม่งั้น selectbox ด้านล่าง crash
     else:
         # Determine index for selectbox
         idx = 0
