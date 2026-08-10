@@ -3173,7 +3173,12 @@ if _CLOUD_ENABLED:
 # ── Portal Switch — แสดงตาม Role ─────────────────────────────────────────────
 _is_admin_role = False
 _portal_options = ["📊 ผู้บังคับบัญชา (Executive Dashboard)"]
-mode = "📊 ผู้บังคับบัญชา (Executive Dashboard)"
+if has_role('admin', 'super_admin'):
+    _portal_options.append("⚙️ แอดมิน (Admin Portal)")
+    _is_admin_role = True
+
+mode = st.sidebar.selectbox("🔀 เลือก Portal:", _portal_options,
+                             key="portal_mode", label_visibility="collapsed") if _is_admin_role else _portal_options[0]
 
 
 if mode == "⚙️ แอดมิน (Admin Portal)":
