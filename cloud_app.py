@@ -349,21 +349,15 @@ def save_realtime_session(active_db_pd: pd.DataFrame, session_date: str):
         conn.commit(); conn.close()
     except: pass
 
-@st.cache_data(ttl=1800, show_spinner=False)  # cache 30 นาที — ลด Supabase Egress
+@st.cache_data(ttl=1800, show_spinner=False)  # cache 30 นาที
 def load_realtime_session(session_date: str):
-    if not is_supabase_configured():
-        return None
     try:
-        from supabase_sync import pull_parquet_from_cloud, get_supabase_client
+        from supabase_sync import pull_parquet_from_cloud, pull_realtime
 
-        # 1. Pull metadata from cloud_realtime table
-        client = get_supabase_client()
-        res = client.table('cloud_realtime').select(
-            'upload_count, first_record_time, last_record_time, updated_at'
-        ).eq('session_date', session_date).execute()
-        meta = res.data[0] if res.data else {}
+        # 1. Pull metadata from cloud_realtime (PostgreSQL)
+        meta_dict = pull_realtime(session_date) or {}
 
-        # 2. Pull the actual raw data from Cloud Storage Parquet
+        # 2. Pull the actual raw data from Local Disk Parquet
         df_pl = pull_parquet_from_cloud(session_date)
         if df_pl is None or df_pl.is_empty():
             return None
@@ -374,10 +368,10 @@ def load_realtime_session(session_date: str):
 
         return {
             'df': df,
-            'upload_count': meta.get('upload_count', 1),
-            'first_time': meta.get('first_record_time', str(df['Datetime'].min()) if not df.empty else '-'),
-            'last_time': meta.get('last_record_time', str(df['Datetime'].max()) if not df.empty else '-'),
-            'updated_at': meta.get('updated_at', '-')
+            'upload_count': meta_dict.get('upload_count', 1),
+            'first_time': meta_dict.get('first_time', str(df['Datetime'].min()) if not df.empty else '-'),
+            'last_time': meta_dict.get('last_time', str(df['Datetime'].max()) if not df.empty else '-'),
+            'updated_at': meta_dict.get('updated_at', '-')
         }
     except Exception as _e:
         import traceback as _tb
@@ -1134,13 +1128,13 @@ else:
     except Exception:
         pass        # cloud ใช้ Supabase เป็นหลัก ถ้า SQLite ไม่ได้ก็ผ่านไป
 
-# ─── Supabase Keep-Alive ping (ป้องกัน free tier pause หลัง 7 วัน) ───────────
+# ─── PostgreSQL Health Ping (ตรวจ connection ครั้งเดียวตอน startup) ─────────
 if _IS_CLOUD:
     try:
-        from supabase_sync import get_supabase_client as _get_sb
-        _get_sb().table('users').select('username').limit(1).execute()
+        from db_adapter import is_pg_configured as _pg_ok
+        _pg_ok()  # ping PostgreSQL — ไม่ต้องทำอะไร ถ้า fail ก็ silent
     except Exception:
-        pass  # ถ้า Supabase หยุดชั่วคราว app ยังทำงาน degraded mode ต่อได้
+        pass
 
 @st.cache_data(ttl=300)
 def load_historical_data():
@@ -1177,44 +1171,34 @@ def _load_target_status():
 
 @st.cache_data(ttl=300, show_spinner=False)
 def _load_available_dates_cloud():
-    """ดึง report_date list จาก Supabase — cached 5 นาที พี tab switch นับพันครั้ง"""
-    if not is_supabase_configured():
-        return []
+    """ดึง report_date list จาก PostgreSQL — cached 5 นาที"""
     try:
-        from supabase_sync import get_supabase_client as _gsc
-        _res = _gsc().table('cloud_daily_reports').select('report_date').order('report_date', desc=True).execute()
-        return [r['report_date'] for r in (_res.data or [])]
+        from supabase_sync import pull_available_dates
+        return pull_available_dates()
     except Exception:
         return []
 
 @st.cache_data(ttl=300, show_spinner=False)
 def _load_cloud_report(selected_date: str):
-    """ดึง priority_data + dashboard_metrics สำหรับวันที่เลือก — cached 5 นาที"""
-    if not is_supabase_configured():
-        return None, None
+    """ดึง priority_data + dashboard_metrics จาก PostgreSQL — cached 5 นาที"""
     try:
-        import json as _json
-        from supabase_sync import get_supabase_client as _gsc
-        _res = _gsc().table('cloud_daily_reports').select(
-            'priority_data, dashboard_metrics'
-        ).eq('report_date', selected_date).execute()
-        if _res.data and len(_res.data) > 0:
-            return _res.data[0]['priority_data'], _res.data[0]['dashboard_metrics']
+        from supabase_sync import pull_daily_report
+        res = pull_daily_report(selected_date)
+        if res and not res.get('priority_df', pd.DataFrame()).empty:
+            import json as _json
+            p = res['priority_df'].to_dict('records')
+            m = res.get('metrics', {})
+            return p, m
         return None, None
     except Exception:
         return None, None
 
 @st.cache_data(ttl=300, show_spinner=False)
 def _load_all_reports_cloud():
-    """ดึง report_date + dashboard_metrics เท่านั้น (ไม่ดึง priority_data ที่หนัก) — cached 5 นาที"""
-    if not is_supabase_configured():
-        return pd.DataFrame()
+    """ดึง report_date + dashboard_metrics จาก PostgreSQL — cached 5 นาที"""
     try:
-        from supabase_sync import get_supabase_client as _gsc
-        _res = _gsc().table('cloud_daily_reports').select(
-            'report_date, dashboard_metrics'
-        ).order('report_date', desc=True).execute()
-        return pd.DataFrame(_res.data) if _res.data else pd.DataFrame()
+        from db_adapter import pull_all_reports_pg
+        return pull_all_reports_pg()
     except Exception:
         return pd.DataFrame()
 
@@ -1232,15 +1216,10 @@ def _cached_parquet_cloud(date: str):
 
 @st.cache_data(ttl=1800, show_spinner=False)
 def _load_reports_for_repeat():
-    """ดึง report_date + priority_data สำหรับ Repeat Offender เท่านั้น — cached 30 นาที"""
-    if not is_supabase_configured():
-        return pd.DataFrame()
+    """ดึง report_date + priority_data จาก PostgreSQL — cached 30 นาที"""
     try:
-        from supabase_sync import get_supabase_client as _gsc
-        _res = _gsc().table('cloud_daily_reports').select(
-            'report_date, priority_data'
-        ).order('report_date', desc=True).execute()
-        return pd.DataFrame(_res.data) if _res.data else pd.DataFrame()
+        from db_adapter import pull_all_reports_pg
+        return pull_all_reports_pg()
     except Exception:
         return pd.DataFrame()
 
@@ -3132,16 +3111,13 @@ def show_clickable_table(df_display, table_key, active_db, priority_df):
 # ── Login Guard — ต้อง Login ก่อนเห็น UI ─────────────────────────────────────
 require_login()
 
-# ── System Health Check (ป้องกัน crash จาก Supabase throttle) ──────────────
+# ── System Health Check (PostgreSQL) ────────────────────────────────────────
 if _IS_CLOUD and not st.session_state.get('_health_checked'):
     try:
-        from supabase_sync import get_supabase_client as _hc_sb
-        _hc_sb().table('users').select('username').limit(1).execute()
-        st.session_state['_supabase_ok'] = True
-    except Exception as _hc_e:
+        from db_adapter import is_pg_configured
+        st.session_state['_supabase_ok'] = is_pg_configured()
+    except Exception:
         st.session_state['_supabase_ok'] = False
-        _hc_msg = str(_hc_e)[:120]
-        st.warning(f"⚠️ ระบบ Cloud ทำงานในโหมดจำกัด — Supabase ไม่พร้อมชั่วคราว ({_hc_msg})\n\nข้อมูล Upload และ Login ยังใช้งานได้ปกติ")
     st.session_state['_health_checked'] = True
 # ── Logo Banner ──────────────────────────────────────────────────────────────
 import os as _os
@@ -3341,27 +3317,22 @@ if mode == "⚙️ แอดมิน (Admin Portal)":
                 if new_wl_plate:
                     clean_p = normalize_plate(new_wl_plate)
                     if clean_p:
-                        conn = sqlite3.connect(DB_PATH)
-                        conn.execute("INSERT OR REPLACE INTO whitelist_master (ทะเบียนรถ, หมายเหตุ) VALUES (?, ?)", (clean_p, new_wl_note))
-                        conn.commit()
-                        conn.close()
+                        from supabase_sync import push_whitelist_plate as _pwlp
+                        _cu2 = get_current_user()
+                        _pwlp(clean_p, new_wl_note, _cu2.get('username','admin') if _cu2 else 'admin')
                         st.success(f"เพิ่ม {clean_p} เรียบร้อยแล้ว")
                     else:
                         st.error("รูปแบบทะเบียนไม่ถูกต้อง")
         
         st.markdown("---")
-        conn = sqlite3.connect(DB_PATH)
-        wl_df = pd.read_sql("SELECT ทะเบียนรถ, หมายเหตุ FROM whitelist_master", conn)
-        conn.close()
+        from supabase_sync import pull_whitelist_df, push_whitelist_plate, delete_whitelist_plate
+        wl_df = pull_whitelist_df()
         st.write("📋 **รายชื่อรถในบัญชีขาวปัจจุบัน:**")
         st.dataframe(wl_df, width='stretch', hide_index=True)
         if not wl_df.empty:
-            del_plate = st.selectbox("เลือกทะเบียนที่ต้องการลบออกจากบัญชีขาว:", wl_df['ทะเบียนรถ'])
+            del_plate = st.selectbox("เลือกทะเบียนที่ต้องการลบออกจากบัญชีขาว:", wl_df['plate'] if 'plate' in wl_df.columns else wl_df.iloc[:,0])
             if st.button("🗑️ ลบรายการ"):
-                conn = sqlite3.connect(DB_PATH)
-                conn.execute("DELETE FROM whitelist_master WHERE ทะเบียนรถ=?", (del_plate,))
-                conn.commit()
-                conn.close()
+                delete_whitelist_plate(del_plate)
                 st.rerun()
 
     with tab_accuracy:
@@ -3486,8 +3457,11 @@ if mode == "⚙️ แอดมิน (Admin Portal)":
                 with col_r1:
                     if st.button("🔄 เปลี่ยน Role", width='stretch', key="local_btn_role"):
                         try:
-                            from supabase_sync import get_supabase_client
-                            get_supabase_client().table('users').update({'role': new_role}).eq('username', mgmt_user).execute()
+                            from db_adapter import _conn
+                            import psycopg2
+                            with _conn() as _rc:
+                                with _rc.cursor() as _rcu:
+                                    _rcu.execute("UPDATE system_users SET role=%s WHERE username=%s", (new_role, mgmt_user))
                             st.success(f"✅ เปลี่ยน role ของ {mgmt_user} เป็น {new_role}")
                         except Exception as e:
                             st.error(f"❌ {e}")
