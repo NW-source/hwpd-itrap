@@ -42,11 +42,7 @@ def get_client_ip() -> str:
     except Exception:
         return "unknown"
 
-# ─── IP Brute-Force Protection ────────────────────────────────────────────────
-def _get_sb():
-    from supabase_sync import get_supabase_client
-    return get_supabase_client()
-
+# ─── IP Brute-Force Protection (PostgreSQL) ───────────────────────────────────
 def check_ip_blocked(ip: str) -> dict:
     """
     ตรวจว่า IP นี้ถูก block อยู่หรือไม่
@@ -55,20 +51,13 @@ def check_ip_blocked(ip: str) -> dict:
     if ip == "unknown":
         return {'blocked': False, 'blocked_until': None, 'attempts': 0}
     try:
-        client = _get_sb()
-        res = client.table('ip_blocklist').select('*').eq('ip_address', ip).execute()
-        if not res.data:
-            return {'blocked': False, 'blocked_until': None, 'attempts': 0}
-
-        row = res.data[0]
-        blocked_until = row.get('blocked_until')
-        attempts      = row.get('attempt_count', 0)
-
-        if blocked_until:
-            bu = datetime.fromisoformat(blocked_until.replace('Z', '+00:00'))
-            now = datetime.now(timezone.utc)
-            if now < bu:
-                # ยังถูก block อยู่
+        from db_adapter import check_ip_blocked_pg
+        info = check_ip_blocked_pg(ip)
+        if info.get('blocked'):
+            bu_str = info.get('blocked_until', '')
+            if bu_str:
+                bu = datetime.fromisoformat(bu_str.replace('Z', '+00:00'))
+                now = datetime.now(timezone.utc)
                 remaining = bu - now
                 hrs  = int(remaining.total_seconds() // 3600)
                 mins = int((remaining.total_seconds() % 3600) // 60)
@@ -77,14 +66,9 @@ def check_ip_blocked(ip: str) -> dict:
                     'blocked_until': bu.astimezone(timezone(timedelta(hours=7))).strftime('%d/%m/%Y %H:%M'),
                     'remaining_hrs': hrs,
                     'remaining_mins': mins,
-                    'attempts': attempts,
+                    'attempts': info.get('attempts', 0),
                 }
-            else:
-                # หมดเวลา block แล้ว — reset
-                _reset_ip(ip, client)
-                return {'blocked': False, 'blocked_until': None, 'attempts': 0}
-
-        return {'blocked': False, 'blocked_until': None, 'attempts': attempts}
+        return info
     except Exception:
         return {'blocked': False, 'blocked_until': None, 'attempts': 0}
 
@@ -96,112 +80,68 @@ def record_failed_attempt(ip: str) -> int:
     if ip == "unknown":
         return 0
     try:
-        client = _get_sb()
-        now_iso = datetime.now(timezone.utc).isoformat()
-
-        res = client.table('ip_blocklist').select('attempt_count').eq('ip_address', ip).execute()
-
-        if res.data:
-            new_count = res.data[0]['attempt_count'] + 1
-            update_data = {
-                'attempt_count': new_count,
-                'last_attempt':  now_iso,
-            }
-            if new_count >= MAX_ATTEMPTS:
-                block_time = datetime.now(timezone.utc) + timedelta(hours=BLOCK_HOURS)
-                update_data['blocked_until'] = block_time.isoformat()
-            client.table('ip_blocklist').update(update_data).eq('ip_address', ip).execute()
-        else:
-            new_count = 1
-            client.table('ip_blocklist').insert({
-                'ip_address':    ip,
-                'attempt_count': 1,
-                'first_attempt': now_iso,
-                'last_attempt':  now_iso,
-                'blocked_until': None,
-            }).execute()
-
+        from db_adapter import check_ip_blocked_pg, update_ip_attempts_pg
+        info = check_ip_blocked_pg(ip)
+        new_count = info.get('attempts', 0) + 1
+        blocked_until = None
+        if new_count >= MAX_ATTEMPTS:
+            from datetime import timedelta
+            blocked_until = datetime.now(timezone.utc) + timedelta(hours=BLOCK_HOURS)
+        update_ip_attempts_pg(ip, new_count, blocked_until)
         return new_count
     except Exception:
         return 0
 
-def _reset_ip(ip: str, client=None):
-    """Reset attempt count สำหรับ IP (หลัง login สำเร็จ หรือหมด block time)"""
+def clear_ip_attempts(ip: str):
+    """เรียกหลัง login สำเร็จ — ล้าง attempt counter"""
     try:
-        if client is None:
-            client = _get_sb()
-        client.table('ip_blocklist').delete().eq('ip_address', ip).execute()
+        from db_adapter import update_ip_attempts_pg
+        update_ip_attempts_pg(ip, 0, None)
     except Exception:
         pass
 
-def clear_ip_attempts(ip: str):
-    """เรียกหลัง login สำเร็จ — ล้าง attempt counter"""
-    _reset_ip(ip)
-
-# ─── Supabase User Operations ─────────────────────────────────────────────────
+# ─── PostgreSQL User Operations ───────────────────────────────────────────────
 def get_user(username: str) -> Optional[dict]:
-    """ดึงข้อมูล User จาก Supabase"""
+    """ดึงข้อมูล User จาก PostgreSQL"""
     try:
-        from supabase_sync import get_supabase_client
-        client = get_supabase_client()
-        result = client.table('users').select('*').eq('username', username).eq('is_active', True).execute()
-        return result.data[0] if result.data else None
+        from db_adapter import get_user_pg
+        return get_user_pg(username.strip().lower())
     except Exception as e:
         st.session_state['_auth_error'] = str(e)
         return None
 
 def update_last_login(username: str):
-    try:
-        from supabase_sync import get_supabase_client
-        from datetime import datetime
-        client = get_supabase_client()
-        client.table('users').update({'last_login': datetime.now().isoformat()}).eq('username', username).execute()
-    except Exception:
-        pass
+    """อัปเดต last_login — ไม่มีคอลัมน์นี้ใน system_users (ไม่จำเป็น)"""
+    pass
 
 def create_user(username: str, password: str, role: str, display_name: str) -> bool:
     """สร้าง User ใหม่ (เฉพาะ super_admin)"""
     try:
-        from supabase_sync import get_supabase_client
-        client = get_supabase_client()
-        client.table('users').insert({
-            'username': username,
-            'password_hash': hash_password(password),
-            'role': role,
-            'display_name': display_name,
-            'is_active': True
-        }).execute()
-        return True
+        from db_adapter import create_user_pg
+        return create_user_pg(username.strip().lower(), hash_password(password), display_name, role)
     except Exception as e:
         st.error(f"❌ สร้าง User ไม่สำเร็จ: {e}")
         return False
 
 def update_user_password(username: str, new_password: str) -> bool:
     try:
-        from supabase_sync import get_supabase_client
-        client = get_supabase_client()
-        client.table('users').update({
-            'password_hash': hash_password(new_password)
-        }).eq('username', username).execute()
-        return True
+        from db_adapter import update_user_password_pg
+        return update_user_password_pg(username, hash_password(new_password))
     except Exception:
         return False
 
 def deactivate_user(username: str) -> bool:
     try:
-        from supabase_sync import get_supabase_client
-        client = get_supabase_client()
-        client.table('users').update({'is_active': False}).eq('username', username).execute()
-        return True
+        from db_adapter import deactivate_user_pg
+        return deactivate_user_pg(username)
     except Exception:
         return False
 
 def get_all_users() -> list:
     try:
-        from supabase_sync import get_supabase_client
-        client = get_supabase_client()
-        result = client.table('users').select('id,username,role,display_name,is_active,created_at,last_login').order('created_at').execute()
-        return result.data or []
+        from db_adapter import get_all_users_pg
+        df = get_all_users_pg()
+        return df.to_dict('records') if not df.empty else []
     except Exception:
         return []
 
