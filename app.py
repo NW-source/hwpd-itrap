@@ -6,12 +6,10 @@ import folium
 import os
 import re
 import sqlite3
+import time
 from datetime import datetime, timedelta
-from folium import plugins
 from folium.plugins import MarkerCluster, HeatMap
-import streamlit.components.v1 as components
 import plotly.graph_objects as go
-import plotly.express as px
 from collections import defaultdict
 import json
 from io import BytesIO
@@ -32,7 +30,7 @@ except ImportError:
     _CLOUD_ENABLED = False
     def require_login(): pass
     def get_current_user(): return None
-    def has_role(*a): return True
+    def has_role(*a): return False  # SECURITY: deny all when auth module missing
     def logout(): pass
     def show_sync_status(): pass
     def is_supabase_configured(): return False
@@ -1320,8 +1318,20 @@ def process_raw_data_polars(df_pd):
     df_pd['ลองจิจูด'] = pd.to_numeric(df_pd['ลองจิจูด'], errors='coerce').fillna(0.0)
     df_pd = df_pd[(df_pd['ละติจูด'] != 0.0) & (df_pd['ลองจิจูด'] != 0.0)].copy()
     
-    # ★ PERF: fix_year — vectorized (ไม่ใช้ .apply)
-    _dy = df_pd['วันที่'].astype(str).str.replace('/', '-', regex=False)
+    # ★ PERF: fix_year — vectorized, handles both YYYY-MM-DD and DD/MM/YYYY formats
+    _dy = df_pd['วันที่'].astype(str).str.strip()
+    # Detect format: if first token (split by / or -) has 4 digits → YYYY first
+    _sample = _dy.iloc[0] if not _dy.empty else ''
+    _slash_parts = _sample.replace('-', '/').split('/')
+    _year_first = len(_slash_parts[0]) == 4 if _slash_parts else True
+    if not _year_first:
+        # DD/MM/YYYY → reorder to YYYY-MM-DD
+        _dy = _dy.str.replace('/', '-', regex=False)
+        _parts = _dy.str.split('-', expand=True)
+        if _parts.shape[1] >= 3:
+            _dy = _parts[2] + '-' + _parts[1] + '-' + _parts[0]
+    else:
+        _dy = _dy.str.replace('/', '-', regex=False)
     _year_int = pd.to_numeric(_dy.str[:4], errors='coerce').fillna(0).astype(int)
     _be_mask = _year_int > 2500
     if _be_mask.any():
@@ -2067,7 +2077,7 @@ def run_intelligence_orchestrator(active_db_pl,
                 "Risk Score": min(100, data["score"]),
                 "ระดับ": "🔴 ยืนยัน" if min(100, data["score"]) >= 85 else "🟡 น่าสงสัย",
             "Apex_Flag": "👑 APEX" if is_apex else "",
-            "Apex_Boost": f"+{int(data["score"] * 0.15)}" if is_apex else "0",
+            "Apex_Boost": ("+" + str(int(data["score"] * 0.15))) if is_apex else "0",
                 "จุดตรวจพบล่าสุด": f"📍 {last_row['จุดติดตั้งกล้อง']}", 
                 "เวลาโผล่ล่าสุด": str(last_row['เวลา']),
                 "Cars_List": [str(c) for c in data["cars"]],
@@ -2531,9 +2541,10 @@ def render_case_dossier(selected_target, active_db, priority_df):
     cars = target_info['Cars_List']
     case_data = active_db[active_db['ทะเบียน_Full'].isin(cars)].sort_values('Datetime')
     
-    is_clone = "สวมทะเบียน" in target_info['ประเภท']
-    is_convoy = "ขบวน" in target_info['ประเภท']
-    is_anomaly = "ผิดปกติ" in target_info['ประเภท']
+    _ptype = str(target_info.get('ประเภท', ''))
+    is_clone = "สวมทะเบียน" in _ptype
+    is_convoy = "ขบวน" in _ptype
+    is_anomaly = "ผิดปกติ" in _ptype
 
     # ★ FIX: รถนำ = รถที่ถึงจุดแรกเร็วที่สุด — re-sort cars list เพื่อให้ cars[0] เป็นรถนำเสมอ
     if is_convoy and not case_data.empty and len(cars) > 1:
@@ -2582,13 +2593,16 @@ def render_case_dossier(selected_target, active_db, priority_df):
     new_status = st.selectbox("ปรับปรุงสถานะ:", status_options, index=status_options.index(current_status), key=f"status_{selected_target}", label_visibility="collapsed")
     
     if new_status != current_status:
-        _conn_w = sqlite3.connect(DB_PATH)
-        _conn_w.execute("INSERT OR REPLACE INTO target_status (Target_ID, status, last_update) VALUES (?, ?, ?)", (selected_target, new_status, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
-        _conn_w.commit()
-        _conn_w.close()
-        _load_target_status.clear()  # ล้าง cache หลังอัปเดท
-        st.success(f"✅ อัปเดตสถานะเป็น: {new_status} เรียบร้อยแล้ว! (มีผลทันทีในตารางเป้าหมาย)")
-        st.session_state['force_refresh'] = True
+        try:
+            _conn_w = sqlite3.connect(DB_PATH)
+            _conn_w.execute("INSERT OR REPLACE INTO target_status (Target_ID, status, last_update) VALUES (?, ?, ?)", (selected_target, new_status, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+            _conn_w.commit()
+            _conn_w.close()
+            _load_target_status.clear()  # ล้าง cache หลังอัปเดท
+            st.success(f"✅ อัปเดตสถานะเป็น: {new_status} เรียบร้อยแล้ว! (มีผลทันทีในตารางเป้าหมาย)")
+            st.rerun()
+        except Exception as _se:
+            st.error(f"❌ บันทึกสถานะไม่สำเร็จ: {_se}")
     
     # === Layout แยกตาม Engine ===
     if is_clone:
@@ -2665,7 +2679,7 @@ def render_case_dossier(selected_target, active_db, priority_df):
             # 🧹 Clean HTML Summary & ขยายความ Intelligence Summary
             dwell_str = ""
             if is_anomaly:
-                border_logs = main_car_df[main_car_df['Zone'] == 'A']
+                border_logs = main_car_df[main_car_df['Zone'] == 'A'] if 'Zone' in main_car_df.columns else pd.DataFrame()
                 if not border_logs.empty and len(border_logs) > 1:
                     dwell_hrs = (border_logs['Datetime'].max() - border_logs['Datetime'].min()).total_seconds() / 3600.0
                     if dwell_hrs > 0: 
@@ -2783,7 +2797,7 @@ def render_case_dossier(selected_target, active_db, priority_df):
             normal_df = c_df
             ghost_df = pd.DataFrame()
             
-        icon_str = "🚚" if "บรร取ุก" in str(c_df.iloc[0]['ประเภทรถ']) or "บรรทุก" in str(c_df.iloc[0]['ประเภทรถ']) else "🚗"
+        icon_str = "🚚" if "บรรทุก" in str(c_df.iloc[0].get('ประเภทรถ', '')) else "🚗"
         
         if is_convoy:
             # รถนำ = cars[0] ซึ่งถูก sort ให้ lead_car อยู่ index 0 แล้วจาก orchestrator
@@ -3018,11 +3032,12 @@ if mode == "⚙️ แอดมิน (Admin Portal)":
         "🗂️ นำเข้าข้อมูล (Data Pipeline)",
         "📜 บัญชีรถยกเว้น (White-list)",
         "📊 AI Accuracy Dashboard",
+        "💬 LINE OA Settings",
     ]
     if has_role('super_admin'):
         _admin_tabs.append("👥 จัดการผู้ใช้ (User Management)")
 
-    tab_upload, tab_whitelist, tab_accuracy, *_extra_tabs = st.tabs(_admin_tabs)
+    tab_upload, tab_whitelist, tab_accuracy, tab_line, *_extra_tabs = st.tabs(_admin_tabs)
     tab_users = _extra_tabs[0] if _extra_tabs else None
 
 
@@ -3034,6 +3049,7 @@ if mode == "⚙️ แอดมิน (Admin Portal)":
             st.session_state.dq_preview = None
 
         if uploaded_files:
+            st.session_state['_upload_filename'] = ', '.join([f.name for f in uploaded_files])
             if st.button("🔍 1. ตรวจสอบคุณภาพข้อมูลเบื้องต้น (Data Quality Check)"):
                 with st.spinner("กำลังวิเคราะห์โครงสร้างไฟล์..."):
                     st.session_state.dq_preview = preliminary_data_check(uploaded_files)
@@ -3148,13 +3164,14 @@ if mode == "⚙️ แอดมิน (Admin Portal)":
                 if new_wl_plate:
                     clean_p = normalize_plate(new_wl_plate)
                     if clean_p:
-                        conn = sqlite3.connect(DB_PATH)
-                        conn.execute("INSERT OR REPLACE INTO whitelist_master (ทะเบียนรถ, หมายเหตุ) VALUES (?, ?)", (clean_p, new_wl_note))
-                        conn.commit()
-                        conn.close()
-                        st.success(f"เพิ่ม {clean_p} เรียบร้อยแล้ว")
-                    else:
-                        st.error("รูปแบบทะเบียนไม่ถูกต้อง")
+                            try:
+                                conn = sqlite3.connect(DB_PATH)
+                                conn.execute("INSERT OR REPLACE INTO whitelist_master (ทะเบียนรถ, หมายเหตุ) VALUES (?, ?)", (clean_p, new_wl_note))
+                                conn.commit()
+                                conn.close()
+                                st.success(f"เพิ่ม {clean_p} เรียบร้อยแล้ว")
+                            except Exception as _we:
+                                st.error(f"❌ บันทึกไม่สำเร็จ: {_we}")
         
         st.markdown("---")
         conn = sqlite3.connect(DB_PATH)
@@ -3231,6 +3248,133 @@ if mode == "⚙️ แอดมิน (Admin Portal)":
             })
             st.dataframe(_log_disp, width='stretch', hide_index=True)
             excel_download_button(_log_disp, "ai_feedback_log.xlsx", "📥 Export Feedback Log (Excel)")
+
+    # ── TAB: LINE OA Settings ─────────────────────────────────────────────────
+    with tab_line:
+        st.header("💬 ตั้งค่า LINE OA (Messaging API)")
+
+        # ── Load current config from SQLite ───────────────────────────────────
+        def _ensure_line_config_table():
+            try:
+                conn = sqlite3.connect(DB_PATH, timeout=10)
+                conn.execute("""CREATE TABLE IF NOT EXISTS line_config (
+                    id INTEGER PRIMARY KEY DEFAULT 1,
+                    channel_access_token TEXT DEFAULT '',
+                    channel_secret TEXT DEFAULT '',
+                    webhook_url TEXT DEFAULT '',
+                    notify_watchlist INTEGER DEFAULT 1,
+                    notify_daily INTEGER DEFAULT 1,
+                    dashboard_url TEXT DEFAULT '',
+                    updated_at TEXT
+                )""")
+                conn.execute("INSERT OR IGNORE INTO line_config (id) VALUES (1)")
+                conn.commit(); conn.close()
+            except Exception as e:
+                st.warning(f"line_config table error: {e}")
+
+        _ensure_line_config_table()
+
+        try:
+            _lconn = sqlite3.connect(DB_PATH, timeout=10)
+            _lcfg = _lconn.execute("SELECT * FROM line_config WHERE id=1").fetchone()
+            _lconn.close()
+            _lc = {
+                "token":       _lcfg[1] if _lcfg else "",
+                "secret":      _lcfg[2] if _lcfg else "",
+                "webhook_url": _lcfg[3] if _lcfg else "",
+                "notify_wl":   bool(_lcfg[4]) if _lcfg else True,
+                "notify_daily":bool(_lcfg[5]) if _lcfg else True,
+                "dash_url":    _lcfg[6] if _lcfg else "",
+            }
+        except Exception:
+            _lc = {"token": "", "secret": "", "webhook_url": "", "notify_wl": True, "notify_daily": True, "dash_url": ""}
+
+        st.markdown("""
+        **วิธีตั้งค่า LINE OA:**
+        1. สมัคร/เข้าสู่ระบบ [LINE Developers Console](https://developers.line.biz)
+        2. สร้าง Provider → สร้าง Channel ประเภท **Messaging API**
+        3. ไปที่แท็บ **Messaging API** → คัดลอก **Channel Access Token** และ **Channel Secret**
+        4. ตั้งค่า Webhook URL เป็น `https://<IP Oracle>:8080/webhook`
+        5. เปิด **Use webhook** และปิด **Auto-reply messages**
+        """)
+        st.markdown("---")
+
+        with st.form("line_settings_form"):
+            _t_col, _s_col = st.columns(2)
+            with _t_col:
+                new_token  = st.text_input("🔑 Channel Access Token", value=_lc["token"],
+                                           type="password", placeholder="ChannelAccessToken...")
+            with _s_col:
+                new_secret = st.text_input("🔐 Channel Secret", value=_lc["secret"],
+                                           type="password", placeholder="ChannelSecret...")
+            new_dash   = st.text_input("🌐 URL Dashboard (แสดงในปุ่ม LINE)",
+                                       value=_lc["dash_url"],
+                                       placeholder="http://YOUR_ORACLE_IP:8501")
+            _wl_col, _daily_col = st.columns(2)
+            with _wl_col:
+                new_notify_wl    = st.checkbox("🚨 แจ้งเตือนเมื่อพบรถใน Watchlist", value=_lc["notify_wl"])
+            with _daily_col:
+                new_notify_daily = st.checkbox("📊 ส่งรายงานสรุปประจำวัน", value=_lc["notify_daily"])
+
+            if st.form_submit_button("💾 บันทึกการตั้งค่า LINE", type="primary"):
+                try:
+                    _sw = sqlite3.connect(DB_PATH, timeout=10)
+                    _sw.execute("""INSERT OR REPLACE INTO line_config
+                        (id, channel_access_token, channel_secret, dashboard_url,
+                         notify_watchlist, notify_daily, updated_at)
+                        VALUES (1, ?, ?, ?, ?, ?, ?)""",
+                        (new_token, new_secret, new_dash,
+                         1 if new_notify_wl else 0,
+                         1 if new_notify_daily else 0,
+                         datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+                    )
+                    _sw.commit(); _sw.close()
+                    st.success("✅ บันทึกการตั้งค่า LINE เรียบร้อย")
+                    st.info("ℹ️ Restart line_bot.py บน Oracle เพื่อให้การตั้งค่ามีผล")
+                except Exception as _le:
+                    st.error(f"❌ บันทึกไม่สำเร็จ: {_le}")
+
+        st.markdown("---")
+        st.markdown("#### 🧪 ทดสอบการส่งข้อความ LINE")
+        _test_plate = st.text_input("พิมพ์ทะเบียนทดสอบ", placeholder="กข 1234 กรุงเทพ")
+        if st.button("📤 ส่งข้อความทดสอบ"):
+            if not _lc["token"]:
+                st.error("❌ กรุณาบันทึก Channel Access Token ก่อน")
+            elif not _test_plate:
+                st.warning("⚠️ กรุณาใส่ทะเบียนทดสอบ")
+            else:
+                try:
+                    import requests as _req
+                    _headers = {
+                        "Authorization": f"Bearer {_lc['token']}",
+                        "Content-Type":  "application/json",
+                    }
+                    _body = {"messages": [{"type": "text", "text": f"🛡️ i-Trap LINE ทดสอบ: ค้นหาทะเบียน {_test_plate}"}]}
+                    _r = _req.post("https://api.line.me/v2/bot/message/broadcast", headers=_headers, json=_body, timeout=10)
+                    if _r.status_code == 200:
+                        st.success("✅ ส่งข้อความทดสอบสำเร็จ — ตรวจสอบใน LINE กลุ่มครับ")
+                    else:
+                        st.error(f"❌ LINE API Error: {_r.status_code} — {_r.text[:200]}")
+                except Exception as _te:
+                    st.error(f"❌ ส่งไม่สำเร็จ: {_te}")
+
+        st.markdown("---")
+        st.markdown("#### 📋 วิธีรัน LINE Bot บน Oracle Cloud")
+        st.code("""# 1) ติดตั้ง dependencies
+pip install line-bot-sdk fastapi uvicorn httpx
+
+# 2) Export environment variables
+export LINE_CHANNEL_ACCESS_TOKEN="your_token_here"
+export LINE_CHANNEL_SECRET="your_secret_here"
+export ITRAP_DATA_DIR="/home/ubuntu/itrap_agent"
+export ITRAP_HOST="YOUR_ORACLE_PUBLIC_IP"
+
+# 3) รัน LINE Bot (background)
+nohup uvicorn line_bot:app --host 0.0.0.0 --port 8080 --workers 1 > line_bot.log 2>&1 &
+
+# 4) เปิด port 8080 ใน Oracle Cloud Security List
+# Ingress Rule: TCP 0.0.0.0/0 → Port 8080
+""", language="bash")
 
     # ── TAB: จัดการผู้ใช้ (Super Admin only) ──────────────────────────────────
     if tab_users and has_role('super_admin'):
