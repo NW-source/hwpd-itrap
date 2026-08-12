@@ -1,6 +1,6 @@
 """
 db_adapter.py — PostgreSQL Adapter สำหรับ HWPD i-Trap
-แทนที่ Supabase ทั้งหมด โดยคงชื่อฟังก์ชันเดิมเพื่อ backward-compatible
+เชื่อมต่อ Oracle Cloud PostgreSQL โดยตรง — ไม่พึ่งพาบริการภายนอก
 """
 
 import os
@@ -59,7 +59,7 @@ def is_pg_configured() -> bool:
     except Exception:
         return False
 
-# ─── Parquet Storage (Local Disk แทน Supabase Storage Bucket) ─────────────────
+# ─── Parquet Storage (Local Disk บน Oracle Cloud) ──────────────────────────────
 PARQUET_BASE = os.path.join(os.path.dirname(__file__), "data", "parquet_storage")
 
 def _parquet_path(report_date: str) -> str:
@@ -490,3 +490,4 @@ def deactivate_user_pg(username: str) -> bool:
         return True
     except Exception:
         return False
+
