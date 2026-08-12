@@ -18,7 +18,7 @@ from io import BytesIO
 try:
     from auth import (require_login, get_current_user, has_role,
                       logout, ROLE_LABEL, render_login_page)
-    from supabase_sync import (
+    from cloud_sync import (
         push_daily_report as _cloud_push_daily,
         push_realtime_session as _cloud_push_rt,
         log_upload as _cloud_log_upload,
@@ -340,12 +340,12 @@ def save_realtime_session(active_db_pd: pd.DataFrame, session_date: str):
         else:
             # ★ ไม่มีใน Local → ดึงจาก Supabase (กรณีลูกน้อง restart เครื่อง)
             try:
-                from supabase_sync import pull_parquet_from_cloud, is_supabase_configured
+                from cloud_sync import pull_parquet_from_cloud, is_supabase_configured
                 if is_supabase_configured():
                     cloud_pl = pull_parquet_from_cloud(session_date)
                     if cloud_pl is not None:
                         old_df = cloud_pl.to_pandas()
-                        from supabase_sync import pull_realtime
+                        from cloud_sync import pull_realtime
                         rt_meta = pull_realtime(session_date)
                         upload_count = rt_meta.get('upload_count', 1) if rt_meta else 1
             except Exception:
@@ -1452,7 +1452,7 @@ def run_intelligence_orchestrator(active_db_pl,
     conn.close()
     whitelist_plates_local = set(wl_df['ทะเบียนรถ'].tolist())
     try:
-        from supabase_sync import pull_whitelist, is_supabase_configured
+        from cloud_sync import pull_whitelist, is_supabase_configured
         if is_supabase_configured():
             whitelist_plates = whitelist_plates_local | pull_whitelist()
         else:
@@ -3075,7 +3075,7 @@ if mode == "⚙️ แอดมิน (Admin Portal)":
                             cloud_db_pl = None
                             if _CLOUD_ENABLED and is_supabase_configured():
                                 with st.spinner(f"☁️ กำลังดึงข้อมูลวันที่ {report_date} จาก Cloud เพื่อ Merge..."):
-                                    from supabase_sync import pull_parquet_from_cloud
+                                    from cloud_sync import pull_parquet_from_cloud
                                     cloud_db_pl = pull_parquet_from_cloud(report_date)
                                 if cloud_db_pl is not None and not cloud_db_pl.is_empty():
                                     st.info(f"☁️ พบข้อมูลวันนี้ใน Cloud {len(cloud_db_pl):,} รายการ — กำลัง Merge รวมกัน")
@@ -3117,7 +3117,7 @@ if mode == "⚙️ แอดมิน (Admin Portal)":
                                     _dname = _cu.get('display_name', '') if _cu else ''
                                     _fname = st.session_state.get('_upload_filename', 'unknown.csv')
                                     with st.spinner("☁️ กำลัง Sync ขึ้น Cloud..."):
-                                        from supabase_sync import push_parquet_to_cloud
+                                        from cloud_sync import push_parquet_to_cloud
                                         # ★★ Push merged parquet กลับ Cloud (ให้ Admin คนอื่น pull ได้)
                                         push_parquet_to_cloud(report_date, active_db_pl_for_date)
                                         # Push priority results
@@ -3437,7 +3437,7 @@ nohup uvicorn line_bot:app --host 0.0.0.0 --port 8080 --workers 1 > line_bot.log
                 with col_r1:
                     if st.button("🔄 เปลี่ยน Role", width='stretch', key="local_btn_role"):
                         try:
-                            from supabase_sync import get_supabase_client
+                            from cloud_sync import get_supabase_client
                             get_supabase_client().table('users').update({'role': new_role}).eq('username', mgmt_user).execute()
                             st.success(f"✅ เปลี่ยน role ของ {mgmt_user} เป็น {new_role}")
                         except Exception as e:

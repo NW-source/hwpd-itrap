@@ -1,0 +1,10 @@
+[Unit]
+Description=HWPD i-Trap Nightly Cleanup Timer
+
+[Timer]
+OnCalendar=*-*-* 03:00:00
+TimeZoneName=Asia/Bangkok
+Persistent=true
+
+[Install]
+WantedBy=timers.target

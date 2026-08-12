@@ -97,6 +97,34 @@ CREATE INDEX IF NOT EXISTS idx_upload_log_date      ON upload_log(report_date);
 CREATE INDEX IF NOT EXISTS idx_ai_feedback_target   ON ai_feedback(target_id);
 CREATE INDEX IF NOT EXISTS idx_ai_feedback_date     ON ai_feedback(report_date);
 CREATE INDEX IF NOT EXISTS idx_suspects_score       ON historical_suspects(max_risk_score DESC);
+CREATE INDEX IF NOT EXISTS idx_target_status_id     ON target_status(target_id);
+
+-- 5) LINE OA Configuration
+CREATE TABLE IF NOT EXISTS line_config (
+    id                      SERIAL      PRIMARY KEY,
+    channel_access_token    TEXT        NOT NULL DEFAULT '',
+    channel_secret          TEXT        NOT NULL DEFAULT '',
+    webhook_url             TEXT        DEFAULT '',
+    notify_watchlist_hit    BOOLEAN     DEFAULT TRUE,
+    notify_daily_summary    BOOLEAN     DEFAULT TRUE,
+    itrap_dashboard_url     TEXT        DEFAULT '',
+    updated_at              TIMESTAMPTZ DEFAULT now()
+);
+-- Seed one empty row so the app can UPDATE instead of INSERT
+INSERT INTO line_config (channel_access_token, channel_secret)
+VALUES ('', '')
+ON CONFLICT DO NOTHING;
+
+-- 6) Watchlist (ทะเบียนที่ต้องเฝ้าระวัง — แยกจาก whitelist)
+CREATE TABLE IF NOT EXISTS watchlist (
+    plate           TEXT        PRIMARY KEY,
+    reason          TEXT,
+    risk_level      TEXT        DEFAULT 'HIGH',
+    added_by        TEXT,
+    added_at        TIMESTAMPTZ DEFAULT now(),
+    is_active       BOOLEAN     DEFAULT TRUE
+);
+CREATE INDEX IF NOT EXISTS idx_watchlist_active ON watchlist(is_active);
 
 -- 4) Grant all tables to itrap_admin
 GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO itrap_admin;

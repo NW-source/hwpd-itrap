@@ -1,0 +1,32 @@
+[server]
+# ไม่เปิด file watcher บน Cloud — ลด CPU และ RAM ที่ใช้ monitor ไฟล์โดยไม่จำเป็น
+fileWatcherType = "none"
+
+# หากใช้ Cloud RAM จำกัด (1GB) — ปิด XSRF protection ไม่ได้ช่วย แต่ปิด hotReload ช่วยได้
+# runOnSave = false  ← default แล้ว
+
+[browser]
+# ไม่ต้องเปิด browser อัตโนมัติบน Cloud
+gatherUsageStats = false
+
+[runner]
+# ปิด magic commands ที่ Streamlit scan ทุก rerun (ลด overhead เล็กน้อย)
+magicEnabled = false
+# ไม่ install missing packages อัตโนมัติ (ป้องกัน pip ทำงานกลางอากาศ)
+installTracer = false
+# ลด RAM ที่ใช้เก็บ widget state เก่าๆ ที่ไม่ใช้แล้ว
+enumCoercion = "nameOnly"
+
+[client]
+# แสดง error ใน browser (ช่วย debug บน Cloud ได้โดยไม่ต้องดู log)
+showErrorDetails = true
+# ปิด toolbar (ลด JavaScript ที่โหลด)
+toolbarMode = "minimal"
+
+[theme]
+base = "light"
+primaryColor = "#2563eb"
+backgroundColor = "#f8fafc"
+secondaryBackgroundColor = "#ffffff"
+textColor = "#0f172a"
+font = "sans serif"

@@ -1,0 +1,19 @@
+[Unit]
+Description=HWPD i-Trap LINE Bot
+After=network.target postgresql.service
+
+[Service]
+User=ubuntu
+WorkingDirectory=/home/ubuntu/itrap_agent
+ExecStart=/home/ubuntu/itrap_agent/venv/bin/uvicorn line_bot:app --host 0.0.0.0 --port 8080 --workers 1
+Restart=always
+RestartSec=5
+MemoryAccounting=yes
+MemoryMax=512M
+OOMPolicy=kill
+Environment=LINE_CHANNEL_SECRET=96a5e5f543af67e2af838d7296585308
+Environment=LINE_CHANNEL_ACCESS_TOKEN=7EwiDl3iORhmwEaGvPT3rWjuohuuV6sRZbIxHPHKPwOabX5Z4L0221bZSGVprgJOE7gCAQ8oumoR1XbMRwPLGgzDXVMc2EKawNCJYmUzNm3dWss/PA8VXnVdoLRUk485LsXWELIyLZqW+BddA5mb9wdB04t89/1O/w1cDnyilFU=
+Environment=ITRAP_HOST=129.150.56.185
+
+[Install]
+WantedBy=multi-user.target

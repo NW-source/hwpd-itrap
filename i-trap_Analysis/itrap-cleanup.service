@@ -1,0 +1,10 @@
+[Unit]
+Description=HWPD i-Trap Nightly Cleanup
+After=network.target
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/home/ubuntu/itrap_cleanup.sh
+StandardOutput=journal
+StandardError=journal

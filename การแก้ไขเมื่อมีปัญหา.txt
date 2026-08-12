@@ -1,0 +1,8 @@
+2️⃣ ถ้า RAM เต็ม รีสตาร์ทยังไง?
+เปิด Command Prompt แล้วรันคำสั่งนี้ได้เลยครับ:
+
+ssh -o StrictHostKeyChecking=no -i D:\itrap_agent\ssh-key-2026-08-03.key ubuntu@161.118.215.149 "sudo systemctl restart itrap.service"
+
+3️⃣ แก้ Logic ให้เหมือน Local ทำยังไง?
+วิธีที่ง่ายที่สุด: แก้โค้ดใน cloud_app.py บนเครื่องพี่ → push ขึ้น GitHub → แล้วรัน:
+ssh -o StrictHostKeyChecking=no -i D:\itrap_agent\ssh-key-2026-08-03.key ubuntu@161.118.215.149 "cd hwpd-itrap && git pull && sudo systemctl restart itrap.service"

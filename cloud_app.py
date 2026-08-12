@@ -21,7 +21,7 @@ from io import BytesIO
 try:
     from auth import (require_login, get_current_user, has_role,
                       logout, ROLE_LABEL, render_login_page)
-    from supabase_sync import (
+    from cloud_sync import (
         push_daily_report as _cloud_push_daily,
         push_realtime_session as _cloud_push_rt,
         log_upload as _cloud_log_upload,
@@ -353,7 +353,7 @@ def save_realtime_session(active_db_pd: pd.DataFrame, session_date: str):
 @st.cache_data(ttl=1800, show_spinner=False)  # cache 30 นาที
 def load_realtime_session(session_date: str):
     try:
-        from supabase_sync import pull_parquet_from_cloud, pull_realtime
+        from cloud_sync import pull_parquet_from_cloud, pull_realtime
 
         # 1. Pull metadata from cloud_realtime (PostgreSQL)
         meta_dict = pull_realtime(session_date) or {}
@@ -1174,7 +1174,7 @@ def _load_target_status():
 def _load_available_dates_cloud():
     """ดึง report_date list จาก PostgreSQL — cached 5 นาที"""
     try:
-        from supabase_sync import pull_available_dates
+        from cloud_sync import pull_available_dates
         return pull_available_dates()
     except Exception:
         return []
@@ -1183,7 +1183,7 @@ def _load_available_dates_cloud():
 def _load_cloud_report(selected_date: str):
     """ดึง priority_data + dashboard_metrics จาก PostgreSQL — cached 5 นาที"""
     try:
-        from supabase_sync import pull_daily_report
+        from cloud_sync import pull_daily_report
         res = pull_daily_report(selected_date)
         if res and not res.get('priority_df', pd.DataFrame()).empty:
             import json as _json
@@ -1209,7 +1209,7 @@ def _cached_parquet_cloud(date: str):
     if not is_supabase_configured():
         return pl.DataFrame()
     try:
-        from supabase_sync import pull_parquet_from_cloud as _ppc
+        from cloud_sync import pull_parquet_from_cloud as _ppc
         result = _ppc(date)
         return result if result is not None else pl.DataFrame()
     except Exception:
@@ -3231,7 +3231,7 @@ if mode == "⚙️ แอดมิน (Admin Portal)":
                             cloud_db_pl = None
                             if _CLOUD_ENABLED and is_supabase_configured():
                                 with st.spinner(f"☁️ กำลังดึงข้อมูลวันที่ {report_date} จาก Cloud เพื่อ Merge..."):
-                                    from supabase_sync import pull_parquet_from_cloud
+                                    from cloud_sync import pull_parquet_from_cloud
                                     cloud_db_pl = pull_parquet_from_cloud(report_date)
                                 if cloud_db_pl is not None and not cloud_db_pl.is_empty():
                                     st.info(f"☁️ พบข้อมูลวันนี้ใน Cloud {len(cloud_db_pl):,} รายการ — กำลัง Merge รวมกัน")
@@ -3273,7 +3273,7 @@ if mode == "⚙️ แอดมิน (Admin Portal)":
                                     _dname = _cu.get('display_name', '') if _cu else ''
                                     _fname = st.session_state.get('_upload_filename', 'unknown.csv')
                                     with st.spinner("☁️ กำลัง Sync ขึ้น Cloud..."):
-                                        from supabase_sync import push_parquet_to_cloud
+                                        from cloud_sync import push_parquet_to_cloud
                                         # ★★ Push merged parquet กลับ Cloud (ให้ Admin คนอื่น pull ได้)
                                         push_parquet_to_cloud(report_date, active_db_pl_for_date)
                                         # Push priority results
@@ -3323,7 +3323,7 @@ if mode == "⚙️ แอดมิน (Admin Portal)":
                 if new_wl_plate:
                     clean_p = normalize_plate(new_wl_plate)
                     if clean_p:
-                        from supabase_sync import push_whitelist_plate as _pwlp
+                        from cloud_sync import push_whitelist_plate as _pwlp
                         _cu2 = get_current_user()
                         _pwlp(clean_p, new_wl_note, _cu2.get('username','admin') if _cu2 else 'admin')
                         st.success(f"เพิ่ม {clean_p} เรียบร้อยแล้ว")
@@ -3331,7 +3331,7 @@ if mode == "⚙️ แอดมิน (Admin Portal)":
                         st.error("รูปแบบทะเบียนไม่ถูกต้อง")
         
         st.markdown("---")
-        from supabase_sync import pull_whitelist_df, push_whitelist_plate, delete_whitelist_plate
+        from cloud_sync import pull_whitelist_df, push_whitelist_plate, delete_whitelist_plate
         wl_df = pull_whitelist_df()
         st.write("📋 **รายชื่อรถในบัญชีขาวปัจจุบัน:**")
         st.dataframe(wl_df, width='stretch', hide_index=True)
@@ -4194,4 +4194,4 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
                     else:
                         st.success("🟢 ไม่พบข้อมูลเป้าหมายเฝ้าระวัง (>80%) และยังไม่มี Realtime Session วันนี้")
             else:
-                st.success("🟢 ไม่พบข้อมูลเป้าหมายเฝ้าระวังความเสี่ยงสูง (>80%) ในวันที่เลือก")
+                st.success("🟢 ไม่พบข้อมูลเป้าหมายเฝ้าระวังความเสี่ยงสูง (>80%) ในวันที่เลือก")

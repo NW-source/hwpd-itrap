@@ -1,0 +1,11 @@
+ALTER TABLE watchlist ADD COLUMN IF NOT EXISTS province TEXT;
+ALTER TABLE watchlist ADD COLUMN IF NOT EXISTS seen_count INT DEFAULT 0;
+ALTER TABLE watchlist ADD COLUMN IF NOT EXISTS last_checkpoint TEXT;
+ALTER TABLE watchlist ADD COLUMN IF NOT EXISTS last_seen_time TEXT;
+ALTER TABLE watchlist ADD COLUMN IF NOT EXISTS behavior_type TEXT;
+ALTER TABLE watchlist ADD COLUMN IF NOT EXISTS lat FLOAT;
+ALTER TABLE watchlist ADD COLUMN IF NOT EXISTS lon FLOAT;
+ALTER TABLE watchlist ADD COLUMN IF NOT EXISTS verdict TEXT;
+ALTER TABLE watchlist ADD COLUMN IF NOT EXISTS convoy_members JSONB DEFAULT '[]';
+ALTER TABLE watchlist ADD COLUMN IF NOT EXISTS convoy_role TEXT DEFAULT 'single';
+SELECT column_name FROM information_schema.columns WHERE table_name='watchlist' ORDER BY ordinal_position;

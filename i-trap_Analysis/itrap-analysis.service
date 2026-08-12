@@ -1,0 +1,16 @@
+[Unit]
+Description=HWPD i-Trap Analysis (Streamlit)
+After=network.target postgresql.service
+
+[Service]
+User=ubuntu
+WorkingDirectory=/home/ubuntu/itrap_agent
+ExecStart=/home/ubuntu/itrap_agent/venv/bin/streamlit run app.py --server.port 8501 --server.address 0.0.0.0 --server.headless true
+Restart=always
+RestartSec=10
+MemoryAccounting=yes
+MemoryMax=6G
+OOMPolicy=kill
+
+[Install]
+WantedBy=multi-user.target
