@@ -154,7 +154,7 @@ def pull_daily_report_pg(report_date: str) -> tuple:
     return None, None
 
 def pull_all_reports_pg() -> pd.DataFrame:
-    """ดึงรายงานทั้งหมด (สำหรับหน้า Admin)"""
+    """ดึงรายงานทั้งหมด (สำหรับหน้า Admin — ไม่รวม priority_data)"""
     try:
         with _conn() as con:
             with con.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
@@ -164,6 +164,29 @@ def pull_all_reports_pg() -> pd.DataFrame:
                 """)
                 rows = cur.fetchall()
                 return pd.DataFrame([dict(r) for r in rows]) if rows else pd.DataFrame()
+    except Exception:
+        return pd.DataFrame()
+
+def pull_all_reports_with_priority_pg() -> pd.DataFrame:
+    """ดึงรายงานทั้งหมด รวม priority_data (สำหรับ Repeat Offender / cum7 / cum30)"""
+    try:
+        with _conn() as con:
+            with con.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+                cur.execute("""
+                    SELECT report_date::text, priority_data, dashboard_metrics
+                    FROM cloud_daily_reports ORDER BY report_date DESC
+                """)
+                rows = cur.fetchall()
+                if not rows:
+                    return pd.DataFrame()
+                result = []
+                for r in rows:
+                    result.append({
+                        'report_date': r['report_date'],
+                        'priority_data': r['priority_data'],  # JSON list
+                        'dashboard_metrics': r['dashboard_metrics'],
+                    })
+                return pd.DataFrame(result)
     except Exception:
         return pd.DataFrame()
 

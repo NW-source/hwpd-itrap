@@ -1219,8 +1219,8 @@ def _cached_parquet_cloud(date: str):
 def _load_reports_for_repeat():
     """ดึง report_date + priority_data จาก PostgreSQL — cached 30 นาที"""
     try:
-        from db_adapter import pull_all_reports_pg
-        return pull_all_reports_pg()
+        from db_adapter import pull_all_reports_with_priority_pg
+        return pull_all_reports_with_priority_pg()
     except Exception:
         return pd.DataFrame()
 
