@@ -51,20 +51,67 @@ def log_upload(username: str, display_name: str, filename: str,
                report_date: str, record_count: int) -> bool:
     return log_upload_pg(username, display_name, filename, report_date, record_count)
 
+def _is_running_on_oracle() -> bool:
+    """ตรวจว่า app กำลังรันบน Oracle Cloud หรือเครื่อง Local"""
+    import socket
+    try:
+        hostname = socket.gethostname()
+        # Oracle Cloud VM จะมี hostname ที่มี 'host-' หรือ IP 10.x.x.x
+        local_ip = socket.gethostbyname(hostname)
+        return local_ip.startswith('10.') or 'oracle' in hostname.lower()
+    except Exception:
+        return False
+
+def _scp_parquet_to_oracle(local_path: str, report_date: str) -> bool:
+    """SCP Parquet file ขึ้น Oracle Cloud อัตโนมัติ"""
+    import subprocess, os
+    # SSH Key — อยู่ใน directory เดียวกับ app หรือ environment variable
+    ssh_key = os.environ.get('ORACLE_SSH_KEY', '')
+    if not ssh_key:
+        # ค้นหา key ใน directory ของ app
+        app_dir = os.path.dirname(os.path.abspath(__file__))
+        for f in os.listdir(app_dir):
+            if f.endswith('.key') and 'ssh' in f.lower():
+                ssh_key = os.path.join(app_dir, f)
+                break
+    if not ssh_key or not os.path.exists(ssh_key):
+        return False
+    try:
+        oracle_ip = '161.118.215.149'
+        remote_dir = '/home/ubuntu/hwpd-itrap/data/parquet_storage/'
+        cmd = [
+            'scp', '-o', 'StrictHostKeyChecking=no',
+            '-i', ssh_key,
+            local_path,
+            f'ubuntu@{oracle_ip}:{remote_dir}'
+        ]
+        result = subprocess.run(cmd, capture_output=True, timeout=120)
+        return result.returncode == 0
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(f"SCP to Oracle failed: {e}")
+        return False
+
 def push_parquet_to_cloud(report_date: str, df_polars, keep_days: int = 30) -> bool:
-    """บันทึก Parquet ลง Local Disk (แทน Supabase Storage)"""
+    """บันทึก Parquet ลง Local Disk และ sync ขึ้น Oracle Cloud อัตโนมัติ"""
+    import os
     ok = push_parquet_local(report_date, df_polars)
-    # cleanup old files > keep_days
     if ok:
+        # ─── Auto-SCP ขึ้น Oracle ถ้ารันอยู่บนเครื่อง Local ─────────────
+        if not _is_running_on_oracle():
+            import db_adapter as _da
+            local_path = os.path.join(_da.PARQUET_BASE, f"{report_date}.parquet")
+            _scp_parquet_to_oracle(local_path, report_date)
+        # ─── cleanup old files > keep_days ──────────────────────────────
         try:
             from datetime import timedelta
             cutoff = (datetime.strptime(report_date, '%Y-%m-%d') - timedelta(days=keep_days)).strftime('%Y-%m-%d')
-            import os, db_adapter as _da
-            for f in os.listdir(_da.PARQUET_BASE):
+            import db_adapter as _da2
+            for f in os.listdir(_da2.PARQUET_BASE):
                 date_str = f.replace('.parquet', '')
                 if f.endswith('.parquet') and date_str < cutoff:
                     try:
-                        os.remove(os.path.join(_da.PARQUET_BASE, f))
+                        os.remove(os.path.join(_da2.PARQUET_BASE, f))
                     except Exception:
                         pass
         except Exception:
