@@ -26,7 +26,7 @@ try:
         push_realtime_session as _cloud_push_rt,
         log_upload as _cloud_log_upload,
         show_sync_status,
-        is_supabase_configured,
+        is_Oracle Cloud_configured,
     )
     _CLOUD_ENABLED = True
 except ImportError:
@@ -36,7 +36,7 @@ except ImportError:
     def has_role(*a): return True
     def logout(): pass
     def show_sync_status(): pass
-    def is_supabase_configured(): return False
+    def is_Oracle Cloud_configured(): return False
     ROLE_LABEL = {}
 
 # ==========================================
@@ -52,7 +52,7 @@ _IS_CLOUD = _sys.platform != 'win32' or _os.path.exists('/mount/src')
 
 if _IS_CLOUD:
     # Streamlit Cloud — repo อยู่ที่ /mount/src/hwpd-itrap/ (read-only)
-    # ใช้ /tmp สำหรับ SQLite (writable) และดึงข้อมูลจาก Supabase
+    # ใช้ /tmp สำหรับ SQLite (writable) และดึงข้อมูลจาก Oracle Cloud
     _REPO_DIR = '/mount/src/hwpd-itrap'
     DATA_DIR  = '/tmp'
 else:
@@ -1122,12 +1122,12 @@ def init_db():
     conn.close()
 
 if not _IS_CLOUD:
-    init_db()   # local เท่านั้น — cloud ใช้ Supabase ไม่ต้องการ SQLite
+    init_db()   # local เท่านั้น — cloud ใช้ Oracle Cloud ไม่ต้องการ SQLite
 else:
     try:
         init_db()   # พยายาม init /tmp fallback
     except Exception:
-        pass        # cloud ใช้ Supabase เป็นหลัก ถ้า SQLite ไม่ได้ก็ผ่านไป
+        pass        # cloud ใช้ Oracle Cloud เป็นหลัก ถ้า SQLite ไม่ได้ก็ผ่านไป
 
 # ─── PostgreSQL Health Ping (ตรวจ connection ครั้งเดียวตอน startup) ─────────
 if _IS_CLOUD:
@@ -1205,8 +1205,8 @@ def _load_all_reports_cloud():
 
 @st.cache_data(ttl=1800, show_spinner=False)
 def _cached_parquet_cloud(date: str):
-    """ดึง Parquet จาก Cloud Storage — cached 30 นาที (ลด Supabase Egress)"""
-    if not is_supabase_configured():
+    """ดึง Parquet จาก Cloud Storage — cached 30 นาที (ลด Oracle Cloud Egress)"""
+    if not is_Oracle Cloud_configured():
         return pl.DataFrame()
     try:
         from cloud_sync import pull_parquet_from_cloud as _ppc
@@ -2364,7 +2364,7 @@ def color_score(val):
 # 🔁 Repeat Offender Intelligence
 # ─────────────────────────────────────────────────────────────────────────
 def repeat_offender_analysis(reports_df, reference_date, window_days=30, min_days=3):
-    """ค้นหาทะเบียนที่ trigger detection ≥ min_days ในช่วง window_days จาก Supabase DataFrame"""
+    """ค้นหาทะเบียนที่ trigger detection ≥ min_days ในช่วง window_days จาก Oracle Cloud DataFrame"""
     try:
         if reports_df is None or reports_df.empty:
             return pd.DataFrame()
@@ -3116,9 +3116,9 @@ require_login()
 if _IS_CLOUD and not st.session_state.get('_health_checked'):
     try:
         from db_adapter import is_pg_configured
-        st.session_state['_supabase_ok'] = is_pg_configured()
+        st.session_state['_Oracle Cloud_ok'] = is_pg_configured()
     except Exception:
-        st.session_state['_supabase_ok'] = False
+        st.session_state['_Oracle Cloud_ok'] = False
     st.session_state['_health_checked'] = True
 # ── Logo Banner ──────────────────────────────────────────────────────────────
 import os as _os
@@ -3229,7 +3229,7 @@ if mode == "⚙️ แอดมิน (Admin Portal)":
 
                             # ★★ Multi-Admin Merge: ดึง parquet ที่มีอยู่แล้วจาก Cloud ──────
                             cloud_db_pl = None
-                            if _CLOUD_ENABLED and is_supabase_configured():
+                            if _CLOUD_ENABLED and is_Oracle Cloud_configured():
                                 with st.spinner(f"☁️ กำลังดึงข้อมูลวันที่ {report_date} จาก Cloud เพื่อ Merge..."):
                                     from cloud_sync import pull_parquet_from_cloud
                                     cloud_db_pl = pull_parquet_from_cloud(report_date)
@@ -3266,8 +3266,8 @@ if mode == "⚙️ แอดมิน (Admin Portal)":
                                 save_daily_report(report_date, priority_df, active_db_pd)
                                 save_realtime_session(active_db_pd, report_date)
 
-                                # ── ☁️ Push ผลลัพธ์ + parquet ขึ้น Supabase Cloud ────────────
-                                if _CLOUD_ENABLED and is_supabase_configured():
+                                # ── ☁️ Push ผลลัพธ์ + parquet ขึ้น Oracle Cloud Cloud ────────────
+                                if _CLOUD_ENABLED and is_Oracle Cloud_configured():
                                     _cu = get_current_user()
                                     _uname = _cu.get('username', 'local') if _cu else 'local'
                                     _dname = _cu.get('display_name', '') if _cu else ''
@@ -3451,7 +3451,7 @@ if mode == "⚙️ แอดมิน (Admin Portal)":
                         if ok:
                             st.success(f"✅ เปลี่ยนรหัสผ่านของ **{chg_user}** สำเร็จ!")
                         else:
-                            st.error("❌ เปลี่ยนรหัสผ่านไม่สำเร็จ — ตรวจสอบการเชื่อมต่อ Supabase")
+                            st.error("❌ เปลี่ยนรหัสผ่านไม่สำเร็จ — ตรวจสอบการเชื่อมต่อ Oracle Cloud")
 
             # ── เปลี่ยน Role / ปิด User ──────────────────────────────────────
             with col_role:
@@ -3502,7 +3502,7 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
     
     st.sidebar.markdown("---")
     
-    # ★ PERF: ใช้ cached function — ไม่ดึง Supabase ทุกครั้งที่กด Tab (สาเหตุหลักที่ช้า)
+    # ★ PERF: ใช้ cached function — ไม่ดึง Oracle Cloud ทุกครั้งที่กด Tab (สาเหตุหลักที่ช้า)
     available_dates = _load_available_dates_cloud()
     _tz_th = timezone(timedelta(hours=7))  # Bangkok UTC+7
     _cloud_today = datetime.now(_tz_th).strftime('%Y-%m-%d')
@@ -3578,7 +3578,7 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
         
         historical_db_pl = pl.DataFrame()
         
-        # ★ PERF: ใช้ cached functions — ไม่ดึง Supabase 2 ครั้งทุก rerun
+        # ★ PERF: ใช้ cached functions — ไม่ดึง Oracle Cloud 2 ครั้งทุก rerun
         _p_raw, _m_raw = _load_cloud_report(selected_date)
         if _p_raw is not None:
             import json as _json
@@ -3610,7 +3610,7 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
         _current_nav = st.session_state.get('nav_tab', '')
         _need_active_db = _current_nav in _TABS_NEED_ACTIVE_DB
 
-        if _need_active_db and _CLOUD_ENABLED and is_supabase_configured():
+        if _need_active_db and _CLOUD_ENABLED and is_Oracle Cloud_configured():
             historical_db_pl = _cached_parquet_cloud(selected_date)
         else:
             historical_db_pl = pl.DataFrame()  # ไม่ซื้อ data ที่หนักถ้าไม่จำเป็น
@@ -4195,3 +4195,4 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
                         st.success("🟢 ไม่พบข้อมูลเป้าหมายเฝ้าระวัง (>80%) และยังไม่มี Realtime Session วันนี้")
             else:
                 st.success("🟢 ไม่พบข้อมูลเป้าหมายเฝ้าระวังความเสี่ยงสูง (>80%) ในวันที่เลือก")
+

@@ -1,5 +1,5 @@
 """
-supabase_sync.py — HWPD i-Trap Cloud Sync Facade
+cloud_sync.py — HWPD i-Trap Oracle Cloud Sync
 ตอนนี้ route ทุก call ไปยัง db_adapter.py (PostgreSQL บน Oracle Cloud)
 คงชื่อฟังก์ชันเดิมทุกตัวเพื่อ backward-compatible กับ cloud_app.py และ app.py
 """
@@ -25,14 +25,20 @@ from db_adapter import (
 
 # ─── Legacy Compat: ฟังก์ชันเหล่านี้ถูกเรียกจาก cloud_app.py / app.py ──────────
 
-def is_supabase_configured() -> bool:
-    """ตรวจสอบการเชื่อมต่อ — ตอนนี้ตรวจ PostgreSQL แทน"""
+def is_cloud_configured() -> bool:
+    """ตรวจสอบการเชื่อมต่อ PostgreSQL บน Oracle Cloud"""
     return is_pg_configured()
 
+# Backward-compat alias
+is_supabase_configured = is_cloud_configured
+
 @st.cache_resource(show_spinner=False)
-def get_supabase_client():
-    """DEPRECATED — คืน None เสมอ (ไม่ใช้ Supabase อีกต่อไป)"""
+def get_db_client():
+    """DEPRECATED — คืน None เสมอ (ใช้ PostgreSQL/db_adapter แทน)"""
     return None
+
+# Backward-compat alias
+get_supabase_client = get_db_client
 
 # ─── PUSH Functions ───────────────────────────────────────────────────────────
 def push_daily_report(report_date: str, priority_df: pd.DataFrame,
@@ -119,7 +125,7 @@ def push_parquet_to_cloud(report_date: str, df_polars, keep_days: int = 30) -> b
     return ok
 
 def pull_parquet_from_cloud(report_date: str):
-    """โหลด Parquet จาก Local Disk (แทน Supabase Storage)"""
+    """โหลด Parquet จาก Local Disk"""
     return pull_parquet_local(report_date)
 
 # ─── Whitelist ────────────────────────────────────────────────────────────────
@@ -193,3 +199,8 @@ def show_sync_status():
             st.sidebar.warning("⚠️ PostgreSQL: ไม่ได้เชื่อมต่อ")
     except Exception:
         st.sidebar.caption("🐘 PostgreSQL: N/A")
+
+
+# Backward-compat aliases
+is_supabase_configured = is_cloud_configured
+get_supabase_client = get_db_client

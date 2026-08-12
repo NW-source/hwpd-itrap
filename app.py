@@ -23,7 +23,7 @@ try:
         push_realtime_session as _cloud_push_rt,
         log_upload as _cloud_log_upload,
         show_sync_status,
-        is_supabase_configured,
+        is_cloud_configured,
     )
     _CLOUD_ENABLED = True
 except ImportError:
@@ -33,7 +33,7 @@ except ImportError:
     def has_role(*a): return False  # SECURITY: deny all when auth module missing
     def logout(): pass
     def show_sync_status(): pass
-    def is_supabase_configured(): return False
+    def is_cloud_configured(): return False
     ROLE_LABEL = {}
 
 # ==========================================
@@ -304,7 +304,7 @@ def ensure_realtime_table():
 def save_realtime_session(active_db_pd: pd.DataFrame, session_date: str):
     """เก็บ/สะสมข้อมูล Realtime ของวันนี้ (Parquet BLOB)
     ★ รองรับทั้ง DB เก่า (raw_data_json) และ DB ใหม่ (raw_data_blob)
-    ★ ถ้า Local ไม่มีข้อมูลเก่า → ดึงจาก Supabase ก่อน (กัน restart เครื่อง)
+    ★ ถ้า Local ไม่มีข้อมูลเก่า → ดึงจาก Oracle Cloud ก่อน (กัน restart เครื่อง)
     """
     import io as _io
     ensure_realtime_table()
@@ -338,10 +338,10 @@ def save_realtime_session(active_db_pd: pd.DataFrame, session_date: str):
             elif old_json:
                 old_df = pd.read_json(_io.StringIO(old_json))
         else:
-            # ★ ไม่มีใน Local → ดึงจาก Supabase (กรณีลูกน้อง restart เครื่อง)
+            # ★ ไม่มีใน Local → ดึงจาก Oracle Cloud (กรณีลูกน้อง restart เครื่อง)
             try:
-                from cloud_sync import pull_parquet_from_cloud, is_supabase_configured
-                if is_supabase_configured():
+                from cloud_sync import pull_parquet_from_cloud, is_cloud_configured
+                if is_cloud_configured():
                     cloud_pl = pull_parquet_from_cloud(session_date)
                     if cloud_pl is not None:
                         old_df = cloud_pl.to_pandas()
@@ -1452,8 +1452,8 @@ def run_intelligence_orchestrator(active_db_pl,
     conn.close()
     whitelist_plates_local = set(wl_df['ทะเบียนรถ'].tolist())
     try:
-        from cloud_sync import pull_whitelist, is_supabase_configured
-        if is_supabase_configured():
+        from cloud_sync import pull_whitelist, is_Oracle Cloud_configured
+        if is_Oracle Cloud_configured():
             whitelist_plates = whitelist_plates_local | pull_whitelist()
         else:
             whitelist_plates = whitelist_plates_local
@@ -3073,7 +3073,7 @@ if mode == "⚙️ แอดมิน (Admin Portal)":
 
                             # ★★ Multi-Admin Merge: ดึง parquet ที่มีอยู่แล้วจาก Cloud ──────
                             cloud_db_pl = None
-                            if _CLOUD_ENABLED and is_supabase_configured():
+                            if _CLOUD_ENABLED and is_Oracle Cloud_configured():
                                 with st.spinner(f"☁️ กำลังดึงข้อมูลวันที่ {report_date} จาก Cloud เพื่อ Merge..."):
                                     from cloud_sync import pull_parquet_from_cloud
                                     cloud_db_pl = pull_parquet_from_cloud(report_date)
@@ -3110,8 +3110,8 @@ if mode == "⚙️ แอดมิน (Admin Portal)":
                                 save_daily_report(report_date, priority_df, active_db_pd)
                                 save_realtime_session(active_db_pd, report_date)
 
-                                # ── ☁️ Push ผลลัพธ์ + parquet ขึ้น Supabase Cloud ────────────
-                                if _CLOUD_ENABLED and is_supabase_configured():
+                                # ── ☁️ Push ผลลัพธ์ + parquet ขึ้น Oracle Cloud ────────────
+                                if _CLOUD_ENABLED and is_cloud_configured():
                                     _cu = get_current_user()
                                     _uname = _cu.get('username', 'local') if _cu else 'local'
                                     _dname = _cu.get('display_name', '') if _cu else ''
@@ -3425,7 +3425,7 @@ nohup uvicorn line_bot:app --host 0.0.0.0 --port 8080 --workers 1 > line_bot.log
                         if ok:
                             st.success(f"✅ เปลี่ยนรหัสผ่านของ **{chg_user}** สำเร็จ!")
                         else:
-                            st.error("❌ เปลี่ยนรหัสผ่านไม่สำเร็จ — ตรวจสอบการเชื่อมต่อ Supabase")
+                            st.error("❌ เปลี่ยนรหัสผ่านไม่สำเร็จ — ตรวจสอบการเชื่อมต่อ Oracle Cloud")
 
             # ── เปลี่ยน Role / ปิด User ──────────────────────────────────────
             with col_role:
@@ -3437,8 +3437,8 @@ nohup uvicorn line_bot:app --host 0.0.0.0 --port 8080 --workers 1 > line_bot.log
                 with col_r1:
                     if st.button("🔄 เปลี่ยน Role", width='stretch', key="local_btn_role"):
                         try:
-                            from cloud_sync import get_supabase_client
-                            get_supabase_client().table('users').update({'role': new_role}).eq('username', mgmt_user).execute()
+                            from cloud_sync import get_Oracle Cloud_client
+                            get_Oracle Cloud_client().table('users').update({'role': new_role}).eq('username', mgmt_user).execute()
                             st.success(f"✅ เปลี่ยน role ของ {mgmt_user} เป็น {new_role}")
                         except Exception as e:
                             st.error(f"❌ {e}")
@@ -4004,3 +4004,4 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
 
         else:
             st.success("🟢 ไม่พบข้อมูลเป้าหมายเฝ้าระวังความเสี่ยงสูง (>80%) ในวันที่เลือก")
+
