@@ -30,7 +30,6 @@ def is_cloud_configured() -> bool:
     return is_pg_configured()
 
 # Backward-compat alias
-is_supabase_configured = is_cloud_configured
 
 @st.cache_resource(show_spinner=False)
 def get_db_client():
@@ -38,7 +37,6 @@ def get_db_client():
     return None
 
 # Backward-compat alias
-get_supabase_client = get_db_client
 
 # ─── PUSH Functions ───────────────────────────────────────────────────────────
 def push_daily_report(report_date: str, priority_df: pd.DataFrame,
@@ -199,9 +197,3 @@ def show_sync_status():
             st.sidebar.warning("⚠️ PostgreSQL: ไม่ได้เชื่อมต่อ")
     except Exception:
         st.sidebar.caption("🐘 PostgreSQL: N/A")
-
-
-# Backward-compat aliases
-is_supabase_configured = is_cloud_configured
-get_supabase_client = get_db_client
-
