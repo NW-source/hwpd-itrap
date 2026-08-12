@@ -26,7 +26,7 @@ try:
         push_realtime_session as _cloud_push_rt,
         log_upload as _cloud_log_upload,
         show_sync_status,
-        is_Oracle Cloud_configured,
+        is_cloud_configured,
     )
     _CLOUD_ENABLED = True
 except ImportError:
@@ -36,7 +36,7 @@ except ImportError:
     def has_role(*a): return True
     def logout(): pass
     def show_sync_status(): pass
-    def is_Oracle Cloud_configured(): return False
+    def is_cloud_configured(): return False
     ROLE_LABEL = {}
 
 # ==========================================
@@ -1205,8 +1205,8 @@ def _load_all_reports_cloud():
 
 @st.cache_data(ttl=1800, show_spinner=False)
 def _cached_parquet_cloud(date: str):
-    """ดึง Parquet จาก Cloud Storage — cached 30 นาที (ลด Oracle Cloud Egress)"""
-    if not is_Oracle Cloud_configured():
+    """ดึง Parquet จาก Cloud Storage — cached 30 นาที (ลด Oracle Cloud)"""
+    if not is_cloud_configured():
         return pl.DataFrame()
     try:
         from cloud_sync import pull_parquet_from_cloud as _ppc
@@ -3229,7 +3229,7 @@ if mode == "⚙️ แอดมิน (Admin Portal)":
 
                             # ★★ Multi-Admin Merge: ดึง parquet ที่มีอยู่แล้วจาก Cloud ──────
                             cloud_db_pl = None
-                            if _CLOUD_ENABLED and is_Oracle Cloud_configured():
+                            if _CLOUD_ENABLED and is_cloud_configured():
                                 with st.spinner(f"☁️ กำลังดึงข้อมูลวันที่ {report_date} จาก Cloud เพื่อ Merge..."):
                                     from cloud_sync import pull_parquet_from_cloud
                                     cloud_db_pl = pull_parquet_from_cloud(report_date)
@@ -3267,7 +3267,7 @@ if mode == "⚙️ แอดมิน (Admin Portal)":
                                 save_realtime_session(active_db_pd, report_date)
 
                                 # ── ☁️ Push ผลลัพธ์ + parquet ขึ้น Oracle Cloud Cloud ────────────
-                                if _CLOUD_ENABLED and is_Oracle Cloud_configured():
+                                if _CLOUD_ENABLED and is_cloud_configured():
                                     _cu = get_current_user()
                                     _uname = _cu.get('username', 'local') if _cu else 'local'
                                     _dname = _cu.get('display_name', '') if _cu else ''
@@ -3610,7 +3610,7 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
         _current_nav = st.session_state.get('nav_tab', '')
         _need_active_db = _current_nav in _TABS_NEED_ACTIVE_DB
 
-        if _need_active_db and _CLOUD_ENABLED and is_Oracle Cloud_configured():
+        if _need_active_db and _CLOUD_ENABLED and is_cloud_configured():
             historical_db_pl = _cached_parquet_cloud(selected_date)
         else:
             historical_db_pl = pl.DataFrame()  # ไม่ซื้อ data ที่หนักถ้าไม่จำเป็น
@@ -4195,4 +4195,5 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
                         st.success("🟢 ไม่พบข้อมูลเป้าหมายเฝ้าระวัง (>80%) และยังไม่มี Realtime Session วันนี้")
             else:
                 st.success("🟢 ไม่พบข้อมูลเป้าหมายเฝ้าระวังความเสี่ยงสูง (>80%) ในวันที่เลือก")
+
 

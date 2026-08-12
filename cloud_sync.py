@@ -204,3 +204,4 @@ def show_sync_status():
 # Backward-compat aliases
 is_supabase_configured = is_cloud_configured
 get_supabase_client = get_db_client
+

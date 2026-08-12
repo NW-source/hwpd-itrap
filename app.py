@@ -1452,8 +1452,8 @@ def run_intelligence_orchestrator(active_db_pl,
     conn.close()
     whitelist_plates_local = set(wl_df['ทะเบียนรถ'].tolist())
     try:
-        from cloud_sync import pull_whitelist, is_Oracle Cloud_configured
-        if is_Oracle Cloud_configured():
+        from cloud_sync import pull_whitelist, is_cloud_configured
+        if is_cloud_configured():
             whitelist_plates = whitelist_plates_local | pull_whitelist()
         else:
             whitelist_plates = whitelist_plates_local
@@ -3073,7 +3073,7 @@ if mode == "⚙️ แอดมิน (Admin Portal)":
 
                             # ★★ Multi-Admin Merge: ดึง parquet ที่มีอยู่แล้วจาก Cloud ──────
                             cloud_db_pl = None
-                            if _CLOUD_ENABLED and is_Oracle Cloud_configured():
+                            if _CLOUD_ENABLED and is_cloud_configured():
                                 with st.spinner(f"☁️ กำลังดึงข้อมูลวันที่ {report_date} จาก Cloud เพื่อ Merge..."):
                                     from cloud_sync import pull_parquet_from_cloud
                                     cloud_db_pl = pull_parquet_from_cloud(report_date)
@@ -3437,8 +3437,8 @@ nohup uvicorn line_bot:app --host 0.0.0.0 --port 8080 --workers 1 > line_bot.log
                 with col_r1:
                     if st.button("🔄 เปลี่ยน Role", width='stretch', key="local_btn_role"):
                         try:
-                            from cloud_sync import get_Oracle Cloud_client
-                            get_Oracle Cloud_client().table('users').update({'role': new_role}).eq('username', mgmt_user).execute()
+                            from cloud_sync import get_db_client
+                            get_db_client().table('users').update({'role': new_role}).eq('username', mgmt_user).execute()
                             st.success(f"✅ เปลี่ยน role ของ {mgmt_user} เป็น {new_role}")
                         except Exception as e:
                             st.error(f"❌ {e}")
@@ -4004,4 +4004,5 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
 
         else:
             st.success("🟢 ไม่พบข้อมูลเป้าหมายเฝ้าระวังความเสี่ยงสูง (>80%) ในวันที่เลือก")
+
 
