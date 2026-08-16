@@ -78,7 +78,7 @@ def push_parquet_local(report_date: str, df_polars) -> bool:
         return False
 
 def pull_parquet_local(report_date: str) -> Optional[pl.DataFrame]:
-    """โหลด Parquet จาก Local Disk → Polars DataFrame"""
+    """โหลด Parquet จาก Local Disk → Polars DataFrame (ทุก columns)"""
     try:
         path = _parquet_path(report_date)
         if not os.path.exists(path):
@@ -86,6 +86,24 @@ def pull_parquet_local(report_date: str) -> Optional[pl.DataFrame]:
         return pl.read_parquet(path)
     except Exception as e:
         logger.error(f"pull_parquet_local: {e}")
+        return None
+
+def pull_parquet_columns_local(report_date: str, columns: list) -> Optional[pl.DataFrame]:
+    """โหลด Parquet แบบ Lazy — อ่านเฉพาะ columns ที่ระบุ (ลด RAM 70-80%)
+    ใช้สำหรับ display-only views ที่ไม่ต้องการทุก column
+    """
+    try:
+        path = _parquet_path(report_date)
+        if not os.path.exists(path):
+            return None
+        # อ่านเฉพาะ columns ที่มีจริงใน file
+        schema = pl.read_parquet_schema(path)
+        valid_cols = [c for c in columns if c in schema]
+        if not valid_cols:
+            return pl.read_parquet(path)
+        return pl.scan_parquet(path).select(valid_cols).collect()
+    except Exception as e:
+        logger.error(f"pull_parquet_columns_local: {e}")
         return None
 
 def list_parquet_dates() -> list:

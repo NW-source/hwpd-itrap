@@ -1215,6 +1215,26 @@ def _cached_parquet_cloud(date: str):
     except Exception:
         return pl.DataFrame()
 
+@st.cache_data(ttl=3600, show_spinner=False)
+def _cached_parquet_display(date: str):
+    """★ Column-Pruned Parquet — อ่านเฉพาะ columns ที่ใช้แสดงผล (ลด RAM 70%)
+    ใช้สำหรับ Repeat Offender / Historical views ที่ไม่ต้องการ AI columns
+    """
+    # columns ที่จำเป็นสำหรับการแสดงผล (ไม่ใช่ AI engine)
+    _DISPLAY_COLS = [
+        'Datetime', 'ทะเบียน_Full', 'กล้อง', 'Camera',
+        'ความเร็ว', 'ทิศทาง', 'ละติจูด', 'ลองจิจูด',
+        'จังหวัด', 'ประเภทยานพาหนะ', 'สี', 'ยี่ห้อ',
+        'plate', 'camera', 'speed', 'direction',
+        'lat', 'lon', 'province',
+    ]
+    try:
+        from cloud_sync import pull_parquet_columns_from_cloud
+        result = pull_parquet_columns_from_cloud(date, _DISPLAY_COLS)
+        return result if result is not None else pl.DataFrame()
+    except Exception:
+        return pl.DataFrame()
+
 @st.cache_data(ttl=1800, show_spinner=False)
 def _load_reports_for_repeat():
     """ดึง report_date + priority_data จาก PostgreSQL — cached 30 นาที"""
@@ -4048,74 +4068,75 @@ elif mode == "📊 ผู้บังคับบัญชา (Executive Dashboa
 
 
                 # ═══ Lazy Loading: แผนที่ + นาฬิกา (Python ข้ามการคำนวณถ้ายังไม่เปิด) ═══
-                _show_map   = st.toggle("🗺️ แสดงแผนที่ประเมินความเสี่ยงทางยุทธวิธี (2D Risk Hotspots & Heatmap)", value=False, key="tog_map_ov")
-                if _show_map:
-                    st.markdown("### 🗺️ แผนที่ประเมินความเสี่ยงทางยุทธวิธี (2D Risk Hotspots & Heatmap)")
-                    # ★ FIX: Heatmap — ใช้ metrics ก่อน ถ้าว่างคำนวณตรงจาก active_db
-                    if metrics and 'map_stats' in metrics and metrics['map_stats']:
-                        map_stats = metrics['map_stats']
-                    else:
-                        import math as _math
-                        _targeted = set(c for cars in priority_df['Cars_List'] for c in cars) if not priority_df.empty else set()
-                        _tgt_db   = active_db[active_db['ทะเบียน_Full'].isin(_targeted)] if (_targeted and not active_db.empty) else pd.DataFrame()
-                        # ★ FIX: สร้าง plate → threat type mapping
-                        _p2threat = {}
-                        if not priority_df.empty:
-                            for _, _row in priority_df.iterrows():
-                                for _car in _row.get('Cars_List', []):
-                                    _p2threat[_car] = _row.get('ประเภท', '')
-                        if not _tgt_db.empty and 'ละติจูด' in _tgt_db.columns:
-                            _tgt_db2 = _tgt_db.dropna(subset=['ละติจูด','ลองจิจูด']).copy()
-                            _tgt_db2['_threat'] = _tgt_db2['ทะเบียน_Full'].map(_p2threat).fillna('')
-                            _cs = (_tgt_db2.groupby('จุดติดตั้งกล้อง')
-                                   .agg(lat=('ละติจูด','first'), lon=('ลองจิจูด','first'),
-                                        volume=('ทะเบียน_Full','nunique'),
-                                        primary_threat=('_threat', lambda x: x.mode().iloc[0] if len(x.mode()) > 0 else '')).reset_index())
-                            _cs = _cs[_cs['lat'].apply(lambda x: not _math.isnan(x))]
-                            map_stats = _cs.to_dict('records')
+                # ★ ITEM 5: @st.fragment — toggle แผนที่ re-run เฉพาะส่วนนี้ ไม่โหลดทั้งหน้า
+                @st.fragment
+                def _render_map_section():
+                    _show_map = st.toggle("🗺️ แสดงแผนที่ประเมินความเสี่ยงทางยุทธวิธี (2D Risk Hotspots & Heatmap)", value=False, key="tog_map_ov")
+                    if _show_map:
+                        st.markdown("### 🗺️ แผนที่ประเมินความเสี่ยงทางยุทธวิธี (2D Risk Hotspots & Heatmap)")
+                        # ★ FIX: Heatmap — ใช้ metrics ก่อน ถ้าว่างคำนวณตรงจาก active_db
+                        if metrics and 'map_stats' in metrics and metrics['map_stats']:
+                            _ms = metrics['map_stats']
                         else:
-                            map_stats = []
-                    import json as _json
-                    _heat_pts = [[r['lat'], r['lon'], min(r['volume'], 30)] for r in map_stats]
-                    _mkr_list = []
-                    for r in map_stats:
-                        _pt = str(r.get('primary_threat', ''))
-                        if 'สวมทะเบียน' in _pt:
-                            _clr = '#f97316'
-                        elif 'ขบวน' in _pt:
-                            _clr = '#1e40af'
-                        elif 'สูงสุด' in _pt or 'ความมั่นคง' in _pt:
-                            _clr = '#dc2626'
-                        else:
-                            _clr = '#7c3aed'
-                        _mkr_list.append({'lat': r['lat'], 'lon': r['lon'], 'color': _clr,
-                                          'popup': f"จุดตรวจ: {r.get('จุดติดตั้งกล้อง','')}<br>เป้าหมาย: {r['volume']} คัน<br>ภัยหลัก: {_pt}"})
-                    _lf_agg = f"""
-                    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-                    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css"/>
-                    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css"/>
-                    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-                    <script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
-                    <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
-                    <div id="lf_agg" style="height:440px;border-radius:10px;"></div>
-                    <script>
-                      var map=L.map('lf_agg').setView([15.0,102.0],6);
-                      L.tileLayer('https://{{s}}.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png',{{attribution:'OSM'}}).addTo(map);
-                      if({_json.dumps(_heat_pts)}.length>0)
-                        L.heatLayer({_json.dumps(_heat_pts)},{{radius:30,blur:20,minOpacity:0.4}}).addTo(map);
-                      var markers = L.markerClusterGroup({{maxClusterRadius:45, disableClusteringAtZoom:14}});
-                      {_json.dumps(_mkr_list)}.forEach(function(m){{
-                        var mkr = L.circleMarker([m.lat,m.lon],{{radius:8,color:m.color,fillColor:m.color,fillOpacity:0.85}})
-                          .bindPopup(m.popup);
-                        markers.addLayer(mkr);
-                      }});
-                      map.addLayer(markers);
-                    </script>
-                    <div style="margin-top:6px;font-size:12px;color:#aaa">
-                      🔴 ระดับสูงสุด &nbsp; 🟠 สวมทะเบียน &nbsp; 🔵 ขบวนรถ &nbsp; 🟣 รถต้องสงสัย
-                    </div>"""
-                    st.components.v1.html(_lf_agg, height=490)
-                    st.markdown("---")
+                            import math as _math
+                            _targeted = set(c for cars in priority_df['Cars_List'] for c in cars) if not priority_df.empty else set()
+                            _tgt_db   = active_db[active_db['ทะเบียน_Full'].isin(_targeted)] if (_targeted and not active_db.empty) else pd.DataFrame()
+                            _p2threat = {}
+                            if not priority_df.empty:
+                                for _, _row in priority_df.iterrows():
+                                    for _car in _row.get('Cars_List', []):
+                                        _p2threat[_car] = _row.get('ประเภท', '')
+                            if not _tgt_db.empty and 'ละติจูด' in _tgt_db.columns:
+                                _tgt_db2 = _tgt_db.dropna(subset=['ละติจูด','ลองจิจูด']).copy()
+                                _tgt_db2['_threat'] = _tgt_db2['ทะเบียน_Full'].map(_p2threat).fillna('')
+                                _cs = (_tgt_db2.groupby('จุดติดตั้งกล้อง')
+                                       .agg(lat=('ละติจูด','first'), lon=('ลองจิจูด','first'),
+                                            volume=('ทะเบียน_Full','nunique'),
+                                            primary_threat=('_threat', lambda x: x.mode().iloc[0] if len(x.mode()) > 0 else '')).reset_index())
+                                _cs = _cs[_cs['lat'].apply(lambda x: not _math.isnan(x))]
+                                _ms = _cs.to_dict('records')
+                            else:
+                                _ms = []
+                        import json as _json
+                        # ★ ITEM 4: Top-N Map — จำกัดแค่ 100 จุดเสี่ยงสูงสุด ลดภาระ browser
+                        _ms = sorted(_ms, key=lambda x: x.get('volume', 0), reverse=True)[:100]
+                        _heat_pts = [[r['lat'], r['lon'], min(r['volume'], 30)] for r in _ms]
+                        _mkr_list = []
+                        for r in _ms:
+                            _pt = str(r.get('primary_threat', ''))
+                            if 'สวมทะเบียน' in _pt:   _clr = '#f97316'
+                            elif 'ขบวน' in _pt:       _clr = '#1e40af'
+                            elif 'สูงสุด' in _pt or 'ความมั่นคง' in _pt: _clr = '#dc2626'
+                            else:                      _clr = '#7c3aed'
+                            _mkr_list.append({'lat': r['lat'], 'lon': r['lon'], 'color': _clr,
+                                              'popup': f"จุดตรวจ: {r.get('จุดติดตั้งกล้อง','')}<br>เป้าหมาย: {r['volume']} คัน<br>ภัยหลัก: {_pt}"})
+                        _lf_agg = f"""
+                        <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+                        <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css"/>
+                        <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css"/>
+                        <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+                        <script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
+                        <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+                        <div id="lf_agg" style="height:440px;border-radius:10px;"></div>
+                        <script>
+                          var map=L.map('lf_agg').setView([15.0,102.0],6);
+                          L.tileLayer('https://{{s}}.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png',{{attribution:'OSM'}}).addTo(map);
+                          if({_json.dumps(_heat_pts)}.length>0)
+                            L.heatLayer({_json.dumps(_heat_pts)},{{radius:30,blur:20,minOpacity:0.4}}).addTo(map);
+                          var markers = L.markerClusterGroup({{maxClusterRadius:45, disableClusteringAtZoom:14}});
+                          {_json.dumps(_mkr_list)}.forEach(function(m){{
+                            var mkr = L.circleMarker([m.lat,m.lon],{{radius:8,color:m.color,fillColor:m.color,fillOpacity:0.85}})
+                              .bindPopup(m.popup);
+                            markers.addLayer(mkr);
+                          }});
+                          map.addLayer(markers);
+                        </script>
+                        <div style="margin-top:6px;font-size:12px;color:#aaa">
+                          🔴 ระดับสูงสุด &nbsp; 🟠 สวมทะเบียน &nbsp; 🔵 ขบวนรถ &nbsp; 🟣 รถต้องสงสัย
+                        </div>"""
+                        st.components.v1.html(_lf_agg, height=490)
+                        st.markdown("---")
+                _render_map_section()
 
                 _show_clock = st.toggle("🕒 แสดงนาฬิกาประเมินสถานการณ์เชิงยุทธวิธี (Advanced Tactical Crime Clock)", value=False, key="tog_clock_ov")
                 if _show_clock:

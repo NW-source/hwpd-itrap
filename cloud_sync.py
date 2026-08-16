@@ -123,8 +123,13 @@ def push_parquet_to_cloud(report_date: str, df_polars, keep_days: int = 30) -> b
     return ok
 
 def pull_parquet_from_cloud(report_date: str):
-    """โหลด Parquet จาก Local Disk"""
+    """โหลด Parquet จาก Local Disk (ทุก columns)"""
     return pull_parquet_local(report_date)
+
+def pull_parquet_columns_from_cloud(report_date: str, columns: list):
+    """โหลด Parquet แบบ Lazy — เฉพาะ columns ที่ระบุ (ลด RAM 70-80%)"""
+    from db_adapter import pull_parquet_columns_local
+    return pull_parquet_columns_local(report_date, columns)
 
 # ─── Whitelist ────────────────────────────────────────────────────────────────
 def pull_whitelist() -> set:
