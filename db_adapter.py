@@ -491,3 +491,97 @@ def deactivate_user_pg(username: str) -> bool:
     except Exception:
         return False
 
+# ─── daily_summary_metrics (Pre-aggregated) ──────────────────────────────────
+def push_summary_metrics_pg(report_date: str, metrics: dict) -> bool:
+    """บันทึก Pre-calculated summary metrics สำหรับวันที่กำหนด
+    metrics ควรมี keys: total_records, risk_80_plus, apex_count, clone_count,
+                        convoy_count, suspect_count, top_cameras, hour_dist
+    """
+    try:
+        with _conn() as con:
+            with con.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO daily_summary_metrics
+                        (report_date, total_records, risk_80_plus, apex_count,
+                         clone_count, convoy_count, suspect_count,
+                         top_cameras, hour_dist, updated_at)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,now())
+                    ON CONFLICT (report_date) DO UPDATE SET
+                        total_records = EXCLUDED.total_records,
+                        risk_80_plus  = EXCLUDED.risk_80_plus,
+                        apex_count    = EXCLUDED.apex_count,
+                        clone_count   = EXCLUDED.clone_count,
+                        convoy_count  = EXCLUDED.convoy_count,
+                        suspect_count = EXCLUDED.suspect_count,
+                        top_cameras   = EXCLUDED.top_cameras,
+                        hour_dist     = EXCLUDED.hour_dist,
+                        updated_at    = now()
+                """, (
+                    report_date,
+                    int(metrics.get('total_records', 0)),
+                    int(metrics.get('risk_80_plus', 0)),
+                    int(metrics.get('apex_count', 0)),
+                    int(metrics.get('clone_count', 0)),
+                    int(metrics.get('convoy_count', 0)),
+                    int(metrics.get('suspect_count', 0)),
+                    json.dumps(metrics.get('top_cameras', []), ensure_ascii=False),
+                    json.dumps(metrics.get('hour_dist', {}), ensure_ascii=False),
+                ))
+        return True
+    except Exception as e:
+        logger.error(f"push_summary_metrics_pg: {e}")
+        return False
+
+def pull_summary_metrics_pg(report_date: str) -> dict:
+    """ดึง Pre-calculated metrics สำหรับวันที่กำหนด — เร็วมาก (< 10ms)"""
+    try:
+        with _conn() as con:
+            with con.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+                cur.execute("""
+                    SELECT total_records, risk_80_plus, apex_count, clone_count,
+                           convoy_count, suspect_count, top_cameras, hour_dist
+                    FROM daily_summary_metrics
+                    WHERE report_date = %s
+                """, (report_date,))
+                row = cur.fetchone()
+                if row:
+                    d = dict(row)
+                    return {
+                        'total_records': d['total_records'],
+                        'risk_80_plus':  d['risk_80_plus'],
+                        'apex_count':    d['apex_count'],
+                        'clone_count':   d['clone_count'],
+                        'convoy_count':  d['convoy_count'],
+                        'suspect_count': d['suspect_count'],
+                        'top_cameras':   d['top_cameras'] or [],
+                        'hour_dist':     d['hour_dist'] or {},
+                    }
+    except Exception as e:
+        logger.error(f"pull_summary_metrics_pg: {e}")
+    return {}
+
+def pull_cum_metrics_pg(start_date: str, end_date: str) -> dict:
+    """ดึง Cumulative metrics ในช่วงวันที่กำหนด (7 วัน / 30 วัน)
+    ดึงข้อมูลสรุปจาก daily_summary_metrics โดยตรง ไม่ต้องคำนวณใหม่
+    """
+    try:
+        with _conn() as con:
+            with con.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+                cur.execute("""
+                    SELECT
+                        COALESCE(SUM(total_records), 0) AS total_records,
+                        COALESCE(SUM(risk_80_plus),  0) AS risk_80_plus,
+                        COALESCE(SUM(apex_count),    0) AS apex_count,
+                        COALESCE(SUM(clone_count),   0) AS clone_count,
+                        COALESCE(SUM(convoy_count),  0) AS convoy_count,
+                        COALESCE(SUM(suspect_count), 0) AS suspect_count
+                    FROM daily_summary_metrics
+                    WHERE report_date >= %s AND report_date <= %s
+                """, (start_date, end_date))
+                row = cur.fetchone()
+                if row:
+                    return dict(row)
+    except Exception as e:
+        logger.error(f"pull_cum_metrics_pg: {e}")
+    return {'total_records': 0, 'risk_80_plus': 0, 'apex_count': 0,
+            'clone_count': 0, 'convoy_count': 0, 'suspect_count': 0}

@@ -3134,6 +3134,50 @@ if mode == "⚙️ แอดมิน (Admin Portal)":
                                             _uname, len(active_db_pd)
                                         )
                                         _cloud_log_upload(_uname, _dname, _fname, report_date, len(active_db_pd))
+
+                                        # ── ⚡ Pre-aggregate Summary Metrics ────────────────────
+                                        try:
+                                            from db_adapter import push_summary_metrics_pg
+                                            import pandas as _pd_agg
+                                            _pdf = priority_df.copy() if not priority_df.empty else _pd_agg.DataFrame()
+                                            _risk_col = 'Risk Score'
+                                            def _safe_int(v):
+                                                try: return int(str(v).replace('%',''))
+                                                except: return 0
+                                            if not _pdf.empty and _risk_col in _pdf.columns:
+                                                _pdf['_risk_num'] = _pdf[_risk_col].apply(_safe_int)
+                                                _high = _pdf[_pdf['_risk_num'] >= 80]
+                                                _type_col = 'ประเภท'
+                                                _apex   = len(_high[_high[_type_col] == 'กลุ่มเป้าหมายความมั่นคงระดับสูงสุด']) if _type_col in _high.columns else 0
+                                                _clone  = len(_high[_high[_type_col] == 'กลุ่มเป้าหมายสวมทะเบียน'])          if _type_col in _high.columns else 0
+                                                _convoy = len(_high[_high[_type_col] == 'กลุ่มรถยนต์เคลื่อนที่แบบขบวน'])    if _type_col in _high.columns else 0
+                                                _susp   = len(_high[_high[_type_col] == 'กลุ่มรถต้องสงสัย'])               if _type_col in _high.columns else 0
+                                            else:
+                                                _apex = _clone = _convoy = _susp = 0
+                                                _high = _pd_agg.DataFrame()
+                                            # Top cameras
+                                            _cam_col = 'กล้อง' if 'กล้อง' in active_db_pd.columns else ('Camera' if 'Camera' in active_db_pd.columns else None)
+                                            _top_cams = []
+                                            if _cam_col:
+                                                _top_cams = active_db_pd[_cam_col].value_counts().head(10).reset_index().rename(columns={_cam_col:'camera','count':'count'}).to_dict('records')
+                                            # Hour distribution
+                                            _dt_col = 'Datetime'
+                                            _hour_dist = {}
+                                            if _dt_col in active_db_pd.columns:
+                                                _hours = _pd_agg.to_datetime(active_db_pd[_dt_col], errors='coerce').dt.hour.dropna()
+                                                _hour_dist = {str(int(h)): int(c) for h, c in _hours.value_counts().items()}
+                                            push_summary_metrics_pg(report_date, {
+                                                'total_records': len(active_db_pd),
+                                                'risk_80_plus':  len(_high),
+                                                'apex_count':    _apex,
+                                                'clone_count':   _clone,
+                                                'convoy_count':  _convoy,
+                                                'suspect_count': _susp,
+                                                'top_cameras':   _top_cams,
+                                                'hour_dist':     _hour_dist,
+                                            })
+                                        except Exception as _e_agg:
+                                            pass  # ไม่ให้ error Pre-agg กระทบ pipeline หลัก
                                     st.caption("☁️ Sync Cloud สำเร็จ (รวม Parquet Merge)")
 
 
