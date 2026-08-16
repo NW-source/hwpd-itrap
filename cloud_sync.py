@@ -29,15 +29,6 @@ def is_cloud_configured() -> bool:
     """ตรวจสอบการเชื่อมต่อ PostgreSQL บน Oracle Cloud"""
     return is_pg_configured()
 
-# Backward-compat alias
-
-@st.cache_resource(show_spinner=False)
-def get_db_client():
-    """DEPRECATED — คืน None เสมอ (ใช้ PostgreSQL/db_adapter แทน)"""
-    return None
-
-# Backward-compat alias
-
 # ─── PUSH Functions ───────────────────────────────────────────────────────────
 def push_daily_report(report_date: str, priority_df: pd.DataFrame,
                        metrics: dict, uploaded_by: str, record_count: int = 0) -> bool:

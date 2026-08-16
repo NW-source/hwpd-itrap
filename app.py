@@ -3183,8 +3183,16 @@ if mode == "⚙️ แอดมิน (Admin Portal)":
 
 
                                 st.success(f"✅ ประมวลผลสำเร็จ! ข้อมูลถูกบันทึกลงฐานข้อมูลเรียบร้อยแล้ว (Report Date: {report_date})")
-                                st.session_state.dq_preview = None 
-                                
+                                st.session_state.dq_preview = None
+
+                                # เคลียร์ cache ทั้งหมดที่เกี่ยวกับข้อมูลเพื่อให้โหลดข้อมูลใหม่ทันที
+                                load_historical_data.clear()
+                                load_realtime_session.clear()
+
+                                # Fix 5: คืน RAM หลังประมวลผลไฟล์ขนาดใหญ่
+                                import gc as _gc
+                                _gc.collect()
+
                                 st.session_state['nav_tab'] = "🏠 สรุปสถานการณ์ (Overview)"
                                 time.sleep(1.5)
                                 st.rerun()
